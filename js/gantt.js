@@ -1,4 +1,4 @@
-import { store } from './store.js';
+import * as store from './store.js';
 
 const MS_IN_DAY = 1000 * 60 * 60 * 24;
 

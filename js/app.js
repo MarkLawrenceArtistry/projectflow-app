@@ -42,7 +42,7 @@ class App {
         }
         ui.renderProjects(projects, this.activeProjectId);
         
-        const projectData = {
+        const project = {
             name: projects.find(p => p.id === this.activeProjectId)?.name || '',
             tasks: await store.getTasks(this.activeProjectId),
             team: await store.getTeam(this.activeProjectId),
@@ -53,15 +53,31 @@ class App {
         };
 
         const viewRenderers = {
-            dashboard: () => ui.renderDashboard(projectData), team: () => ui.renderTeam(projectData.team, projectData.tasks),
-            tasks: () => ui.renderTasks(projectData.tasks, projectData.team), milestones: () => ui.renderMilestones(projectData.milestones),
-            status: () => ui.renderStatus(projectData.statusItems), risks: () => ui.renderRisks(projectData.risks),
-            gantt: () => gantt.render(projectData),
+            dashboard: () => ui.renderDashboard(project),
+            team: () => ui.renderTeam(project.team, project.tasks),
+            tasks: () => {
+                ui.renderTaskFilters(project.team, project.tasks);
+                let filteredTasks = [...project.tasks];
+                const memberFilter = document.getElementById('task-filter-member').value;
+                const priorityFilter = document.getElementById('task-filter-priority').value;
+                const categoryFilter = document.getElementById('task-filter-category').value;
+                
+                if (memberFilter !== 'all') { filteredTasks = filteredTasks.filter(t => t.assignedTo === memberFilter); }
+                if (priorityFilter !== 'all') { filteredTasks = filteredTasks.filter(t => t.priority === priorityFilter); }
+                if (categoryFilter !== 'all') { filteredTasks = filteredTasks.filter(t => t.category === categoryFilter); }
+
+                ui.renderTasks(filteredTasks, project.team);
+            },
+            milestones: () => ui.renderMilestones(project.milestones),
+            status: () => ui.renderStatus(project.statusItems),
+            risks: () => ui.renderRisks(project.risks),
+            gantt: () => gantt.render(project),
             'team-member-profile': async () => {
                 const member = await store.getMember(this.currentMemberId);
-                ui.renderTeamMemberProfile(member, projectData.tasks.filter(t => t.assignedTo === this.currentMemberId));
+                ui.renderTeamMemberProfile(member, project.tasks.filter(t => t.assignedTo === this.currentMemberId));
             }
         };
+        
         ui.switchView(this.currentView);
         if(viewRenderers[this.currentView]) await viewRenderers[this.currentView]();
         ui.hideLoader();
@@ -75,7 +91,11 @@ class App {
         ui.projectSelector.addEventListener('change', e => { this.activeProjectId = e.target.value; sessionStorage.setItem('activeProjectId', this.activeProjectId); this.currentView = 'dashboard'; this.render(); });
         document.getElementById('add-project-btn').addEventListener('click', async () => { const n=prompt('Enter new project name:'); if(n&&n.trim()){const newProj = await store.addProject(n.trim()); if(newProj) {this.activeProjectId = newProj.id; sessionStorage.setItem('activeProjectId', this.activeProjectId);} this.render();}});
         document.getElementById('delete-project-btn').addEventListener('click', async () => { if(confirm(`Delete project? This is irreversible.`)){await store.deleteProject(this.activeProjectId); this.activeProjectId = null; sessionStorage.removeItem('activeProjectId'); this.render();}});
-        document.getElementById('backup-btn').addEventListener('click', async () => { await store.signOut(); window.location.replace('/login.html'); }); // Re-purposed as Sign Out
+        
+        // Repurposed backup button for Sign Out
+        const backupBtn = document.getElementById('backup-btn');
+        backupBtn.textContent = "Sign Out";
+        backupBtn.addEventListener('click', async () => { await store.signOut(); window.location.replace('/login.html'); });
         document.getElementById('restore-btn').style.display = 'none';
         
         const viewHandlers = {
@@ -96,10 +116,16 @@ class App {
         document.getElementById('print-gantt-btn')?.addEventListener('click', () => gantt.print());
         document.getElementById('main-content').addEventListener('click', e => { if (e.target.id === 'back-to-team-btn') { this.currentView = 'team'; this.render(); } });
         ui.modal.closeBtn.addEventListener('click', ()=>ui.closeModal()); ui.modal.backdrop.addEventListener('click', ()=>ui.closeModal());
-    }
 
+        const filters = ['task-filter-member', 'task-filter-priority', 'task-filter-category'];
+        filters.forEach(filterId => {
+            const el = document.getElementById(filterId);
+            if(el) el.addEventListener('change', () => { if (this.currentView === 'tasks') this.render(); });
+        });
+    }
+    
     handleMemberClick(memberId) { this.currentView = 'team-member-profile'; this.currentMemberId = memberId; this.render(); }
-    async handleMemberAdd() { const userEmail = prompt("Enter the email of the user to add to this project:"); if (!userEmail) return; alert("In a real app, you'd find the user by email and call store.addTeamMember. This is a placeholder."); }
+    async handleMemberAdd() { const userEmail = prompt("Enter the email of the user to add to this project:"); if (!userEmail) return; alert("To implement this fully, you would need a Supabase Edge Function to look up the user's ID from their email and then call store.addTeamMember."); }
     async handleTaskForm(id){const isEdit=!!id;const t=isEdit?await store.getTask(id):undefined;const team=await store.getTeam(this.activeProjectId);ui.openModal(isEdit?'Edit Task':'Add Task',ui.createTaskForm(team,t));document.getElementById('form').addEventListener('submit',async e=>{e.preventDefault();const d={name:document.getElementById('name').value,description:document.getElementById('desc').value,assignedTo:document.getElementById('assign').value||null,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value,category:document.getElementById('cat').value.trim(),priority:document.getElementById('priority').value};if(isEdit)await store.updateTask(id,d);else await store.addTask(d,this.activeProjectId);ui.closeModal();this.render()});}
     async handleMilestoneForm(id){const isEdit=!!id;const m=isEdit?await store.getMilestone(id):undefined;ui.openModal(isEdit?'Edit Milestone':'Add Milestone',ui.createMilestoneForm(m));document.getElementById('form').addEventListener('submit',async e=>{e.preventDefault();const d={name:document.getElementById('name').value,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value};if(isEdit)await store.updateMilestone(id,d);else await store.addMilestone(d,this.activeProjectId);ui.closeModal();this.render()});}
     async handleStatusForm(id){const isEdit=!!id;const s=isEdit?await store.getStatusItem(id):undefined;ui.openModal(isEdit?'Edit Status':'Add Status',ui.createStatusForm(s));const p=document.getElementById('progress'),v=document.getElementById('progress-val');p.addEventListener('input',()=>v.textContent=`${p.value}%`);document.getElementById('form').addEventListener('submit',async e=>{e.preventDefault();const d={name:document.getElementById('name').value,progress:document.getElementById('progress').value,color:document.getElementById('color').value};if(isEdit)await store.updateStatusItem(id,d);else await store.addStatusItem(d,this.activeProjectId);ui.closeModal();this.render()});}
