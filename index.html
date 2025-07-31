@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProjectFlow - Management System</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app-container">
+        <aside id="sidebar">
+            <div class="sidebar-header"><h2>ProjectFlow</h2></div>
+            <div class="project-management-section">
+                <div class="project-selector-header"><h3>Projects</h3><button id="add-project-btn" class="btn-icon" data-tooltip="Create New Project">+</button></div>
+                <select id="project-selector" class="form-input"></select>
+                <button id="delete-project-btn" class="btn btn-danger btn-small">Delete Current Project</button>
+            </div>
+            <nav class="sidebar-nav">
+                <ul>
+                    <li><a href="#" class="nav-link active" data-view="dashboard">Dashboard</a></li>
+                    <li><a href="#" class="nav-link" data-view="status">Status</a></li>
+                    <li><a href="#" class="nav-link" data-view="tasks">Tasks</a></li>
+                    <li><a href="#" class="nav-link" data-view="gantt">Gantt Chart</a></li>
+                    <li><a href="#" class="nav-link" data-view="team">Team</a></li>
+                    <li><a href="#" class="nav-link" data-view="milestones">Milestones</a></li>
+                    <li><a href="#" class="nav-link" data-view="risks">Risks</a></li>
+                </ul>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="backup-btn" class="btn btn-small">Backup Data</button>
+                <button id="restore-btn" class="btn btn-small">Restore Data</button>
+                <input type="file" id="restore-input" style="display: none;" accept=".json">
+            </div>
+        </aside>
+
+        <main id="main-content">
+            <button id="mobile-menu-toggle" class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
+            
+            <section id="dashboard-view" class="view active"><header class="view-header"><h1>Dashboard</h1><h2 id="dashboard-project-name" class="current-project-title"></h2></header><div id="dashboard-content"></div></section>
+            <section id="status-view" class="view"><header class="view-header"><h1>Development Status</h1><button id="add-status-item-btn" class="btn btn-primary">Add Status Item</button></header><div id="status-list" class="content-container"></div></section>
+            
+            <section id="tasks-view" class="view">
+                <header class="view-header">
+                    <h1>Tasks</h1>
+                    <button id="add-task-btn" class="btn btn-primary">Add Task</button>
+                </header>
+                <div class="tabs">
+                    <button class="tab-link active" data-tab="pending">Pending</button>
+                    <button class="tab-link" data-tab="finished">Finished</button>
+                </div>
+                <div class="task-filters card">
+                    <select id="task-filter-member" class="form-select"><option value="all">All Members</option></select>
+                    <select id="task-filter-priority" class="form-select">
+                        <option value="all">All Priorities</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                    <select id="task-filter-category" class="form-select"><option value="all">All Categories</option></select>
+                </div>
+                <div id="task-list-pending" class="content-container tab-content active"></div>
+                <div id="task-list-finished" class="content-container tab-content"></div>
+            </section>
+
+            <section id="gantt-view" class="view"><header class="view-header"><h1>Gantt Chart (Phases)</h1><div><button id="add-gantt-phase-btn" class="btn btn-primary">Create Phase</button><button id="print-gantt-btn" class="btn" data-tooltip="Print chart as PNG">Print Chart</button></div></header><div id="gantt-chart-container" class="card"></div></section>
+            <section id="team-view" class="view"><header class="view-header"><h1>Team Members</h1><button id="add-member-btn" class="btn btn-primary">Add Member</button></header><div id="team-grid" class="content-container"></div></section>
+            <section id="milestones-view" class="view"><header class="view-header"><h1>Milestones</h1><button id="add-milestone-btn" class="btn btn-primary">Create Milestone</button></header><div id="milestone-list" class="content-container"></div></section>
+            <section id="risks-view" class="view"><header class="view-header"><h1>Risk Management</h1><button id="add-risk-btn" class="btn btn-primary">Add Risk</button></header><div id="risk-table-container" class="content-container"></div></section>
+            <section id="team-member-profile-view" class="view"><div id="team-member-profile-content"></div></section>
+        </main>
+    </div>
+
+    <div id="modal-container"><div class="modal-backdrop"></div><div class="modal-content"><div class="modal-header"><h2 id="modal-title"></h2><button id="modal-close-btn" class="btn-icon">×</button></div><div id="modal-body" class="modal-body"></div></div></div>
+    <div id="loader"><div class="spinner"></div></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
