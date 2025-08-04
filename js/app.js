@@ -42,8 +42,6 @@ class App {
     }
 
     initMainApp() {
-        // ** THE CORE FIX IS HERE **
-        // First, render the application to create the HTML elements.
         this.render();
 
         // Then, if we haven't set up the main listeners yet, set them up.
@@ -108,7 +106,7 @@ class App {
             risks: () => ui.renderRisks(project.risks, currentUser),
             gantt: () => gantt.render(project),
             settings: () => { /* Renders nothing, the view is static HTML */ },
-            admin: () => ui.renderAdminView(store.getAllUsers()),
+            admin: () => ui.renderAdminView(store.getAllUsers(), currentUser),
             'projects-admin': () => ui.renderProjectsAdminView(store.projects, currentUser),
             
             // THE FIX IS HERE: We now correctly retrieve the specific member's data.
@@ -131,7 +129,7 @@ class App {
         document.getElementById('show-login').addEventListener('click', e => { e.preventDefault(); this.showLogin(true); });
     }
 
-        setupMainAppEventListeners() {
+    setupMainAppEventListeners() {
         if (this.mainAppInitialized) return;
 
         // --- GENERAL APP LISTENERS (Always present) ---
@@ -152,12 +150,7 @@ class App {
         });
         ui.projectSelector.addEventListener('change', e => store.setActiveProject(e.target.value));
 
-        // --- LISTENERS FOR DYNAMICALLY ADDED/REMOVED ELEMENTS ---
-        
-        // This single, powerful listener on #main-content handles clicks for most views.
-        // This is more robust than adding/removing listeners on elements that might not exist.
         document.getElementById('main-content').addEventListener('click', e => {
-            // "Back to Team" button from Profile view
             if (e.target.id === 'back-to-team-btn') {
                 this.currentView = 'team';
                 this.render();
@@ -166,10 +159,16 @@ class App {
 
             // Admin View actions
             if (e.target.closest('#admin-view')) {
-                const userId = e.target.closest('[data-id]')?.dataset.id;
-                if (e.target.closest('.edit-btn')) this.handleUserForm(userId);
-                if (e.target.closest('.delete-btn')) this.handleUserDelete(userId);
-                return;
+                const item = e.target.closest('[data-id]');
+                if (!item) return;
+
+                const id = item.dataset.id;
+                if (e.target.closest('.edit-btn')) {
+                    this.handleUserForm(id);
+                }
+                if (e.target.closest('.delete-btn')) {
+                    this.handleUserDelete(id);
+                }
             }
 
             // Team View actions (including click on card to view profile)
@@ -366,7 +365,37 @@ class App {
     handleTaskToggle(id){store.toggleTaskCompletion(id);}
     handleMilestoneForm(id){const i=!!id,t=i?store.getMilestone(id):void 0;ui.openModal(i?'Edit Milestone':'Add Milestone',ui.createMilestoneForm(t)),document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const s={name:document.getElementById('name').value,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value};i?store.updateMilestone(id,s):store.addMilestone(s),ui.closeModal()});}
     handleMilestoneDelete(id) { const t = store.getMilestone(id); if (t && confirm(`Delete milestone "${t.name}"?`)) { store.deleteMilestone(id); } }
-    handleStatusForm(id){const i=!!id,t=i?store.getStatusItem(id):void 0;ui.openModal(i?'Edit Status':'Add Status',ui.createStatusForm(t));const e=document.getElementById('progress'),s=document.getElementById('progress-val');e.addEventListener('input',()=>s.textContent=`${e.value}%`),document.getElementById('form').addEventListener('submit',t=>{t.preventDefault();const o={name:document.getElementById('name').value,progress:document.getElementById('progress').value,color:document.getElementById('color').value};i?store.updateStatusItem(id,o):store.addStatusItem(o),ui.closeModal()});}
+    handleStatusForm(id) {
+        const isEdit = !!id;
+        const statusItem = isEdit ? store.getStatusItem(id) : {}; // Correctly get the specific item
+
+        ui.openModal(isEdit ? 'Edit Status' : 'Add Status', ui.createStatusForm(statusItem));
+        
+        const progressSlider = document.getElementById('progress');
+        const progressValueSpan = document.getElementById('progress-val');
+        
+        // This listener updates the percentage text as you move the slider
+        if (progressSlider && progressValueSpan) {
+            progressSlider.addEventListener('input', () => {
+                progressValueSpan.textContent = `${progressSlider.value}%`;
+            });
+        }
+
+        document.getElementById('form').addEventListener('submit', e => {
+            e.preventDefault();
+            const data = {
+                name: document.getElementById('name').value,
+                progress: document.getElementById('progress').value,
+                color: document.getElementById('color').value
+            };
+            if (isEdit) {
+                store.updateStatusItem(id, data);
+            } else {
+                store.addStatusItem(data);
+            }
+            ui.closeModal();
+        });
+    }
     handleStatusDelete(id) { const t = store.getStatusItem(id); if (t && confirm(`Delete status "${t.name}"?`)) { store.deleteStatusItem(id); } }
     handleRiskForm(id){const i=!!id,r=i?store.getRisk(id):undefined;ui.openModal(i?'Edit Risk':'Add Risk',ui.createRiskForm(r));document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const d={description:document.getElementById('desc').value,impact:document.getElementById('impact').value,priority:document.getElementById('priority').value};if(i)store.updateRisk(id,d);else store.addRisk(d);ui.closeModal();});}
     handleRiskDelete(id) { if (confirm('Delete this risk?')) { store.deleteRisk(id); } }

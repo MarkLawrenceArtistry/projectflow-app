@@ -260,7 +260,7 @@ class Store {
     addStatusItem(d) { const id = `status_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).set(new StatusItem(id, d.name, d.progress, d.color)); }
     updateStatusItem(id, d) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).update(d); }
     deleteStatusItem(id) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).remove(); }
-    getStatusItem(id) { return this.getActiveProject()?.statusItems.find(s => s.id === s.id); }
+    getStatusItem(id) { return this.getActiveProject()?.statusItems.find(s => s.id === id); }
     addGanttPhase(d) { const id = `gantt_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).set(new GanttPhase(id, d.name, d.startDate, d.endDate, d.color)); }
     updateGanttPhase(id, d) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).update(d); }
     deleteGanttPhase(id) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).remove(); }

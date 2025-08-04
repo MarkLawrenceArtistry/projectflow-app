@@ -49,7 +49,7 @@ class UI {
             </div>`;
         }).join("");
     }
-    renderAdminView(users) {
+    renderAdminView(users, currentUser) {
         const content = `
         <div class="table-container">
             <table class="styled-table">
@@ -63,14 +63,13 @@ class UI {
                 </thead>
                 <tbody>
                     ${users.map(u => `
-                        <tr>
+                        <tr data-id="${u.id}">
                             <td>${u.name}</td>
                             <td>${u.email}</td>
                             <td>${u.role}</td>
                             <td>
-                                <div class="item-actions" data-id="${u.id}">
-                                    ${this.createItemActionsHTML("User")}
-                                </div>
+                                <!-- Only show actions for other users, and not for the admin themselves -->
+                                ${u.id === currentUser.id ? '' : this.createItemActionsHTML("User", currentUser)}
                             </td>
                         </tr>
                     `).join('')}
@@ -212,8 +211,20 @@ class UI {
             : '<div class="card"><p>No finished tasks.</p></div>';
     }
     createTaskItemHTML(task,team){const assignee=team.find(m=>m.id===task.assignedTo);return`<div class="task-item card" data-id="${task.id}"><input type="checkbox" class="task-item-checkbox" ${task.completed?"checked":""} data-tooltip="Toggle completion"><div class="task-item-info"><span class="task-name ${task.completed?"completed":""}">${task.name}</span><div class="task-metadata"><span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span><span>${assignee?`👤 ${assignee.name}`:""}</span><span>${task.category?`📁 ${task.category}`:""}</span><strong data-tooltip="Deadline">${this.formatDate(task.endDate,!0)}</strong></div></div><div class="item-actions">${this.createItemActionsHTML("Task")}</div></div>`}
-    renderMilestones(m){this.milestoneList.innerHTML=!m||m.length===0?'<div class="card"><p>No milestones.</p></div>':m.sort((a,b)=>new Date(a.startDate)-new Date(b.startDate)).map(m=>`<div class="milestone-item card" data-id="${m.id}"><div><h3>${m.name}</h3><p>${this.formatDate(m.startDate,!0)} - ${this.formatDate(m.endDate,!0)}</p></div><div class="item-actions">${this.createItemActionsHTML("Milestone")}</div></div>`).join("")}
-        renderStatus(items) {
+    renderMilestones(milestones, currentUser) {
+        this.milestoneList.innerHTML = !milestones || milestones.length === 0
+            ? '<div class="card"><p>No milestones.</p></div>'
+            : milestones.sort((a,b) => new Date(a.startDate) - new Date(b.startDate))
+              .map(m => `
+                <div class="milestone-item card" data-id="${m.id}">
+                    <div>
+                        <h3>${m.name}</h3>
+                        <p>${this.formatDate(m.startDate, true)} - ${this.formatDate(m.endDate, true)}</p>
+                    </div>
+                    ${this.createItemActionsHTML("Milestone", currentUser)}
+                </div>`).join("");
+    }
+    renderStatus(items, currentUser) {
         this.statusList.innerHTML = !items || items.length === 0 
             ? '<div class="card"><p>No status items.</p></div>' 
             : items.map(i => `
@@ -225,7 +236,7 @@ class UI {
                     <div class="status-progress-bar-container">
                         <div class="status-progress-bar-fill" style="width: ${i.progress}%; background-color: ${i.color};"></div>
                     </div>
-                    <div class="item-actions">${this.createItemActionsHTML("Status Item")}</div>
+                    ${this.createItemActionsHTML("Status Item", currentUser)}
                 </div>
             `).join('');
     }
@@ -294,17 +305,17 @@ class UI {
     createItemActionsHTML(type, currentUser) {
         // If there's no user or the user is a member, don't show any buttons
         if (!currentUser || currentUser.role === 'member') {
-            return ''; // Return nothing for members
+            return '';
         }
         
         // Only Admins and Leaders will see these buttons
         return `
         <div class="item-actions">
             <button class="btn-icon edit-btn" data-tooltip="Edit ${type}">
-                <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
             </button>
             <button class="btn-icon delete-btn" data-tooltip="Delete ${type}">
-                <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
         </div>`;
     }
