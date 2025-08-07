@@ -10,13 +10,56 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="app-container">
+    <div id="offline-banner">
+        <span>You are currently offline. Some features may not be available.</span>
+    </div>
+    <!-- Auth View (Login/Register) -->
+    <div id="auth-view" style="display: none;">
+        <div class="auth-container">
+            <div class="auth-form-container" id="login-container">
+                <form id="login-form">
+                    <h2>Login</h2>
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" class="form-input" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <p class="auth-toggle">Don't have an account? <a href="#" id="show-register">Register</a></p>
+                </form>
+            </div>
+            <div class="auth-form-container" id="register-container" style="display: none;">
+                <form id="register-form">
+                    <h2>Register</h2>
+                    <div class="form-group">
+                        <label for="register-name">Full Name</label>
+                        <input type="text" id="register-name" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Password</label>
+                        <input type="password" id="register-password" class="form-input" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Register</button>
+                    <p class="auth-toggle">Already have an account? <a href="#" id="show-login">Login</a></p>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app-container" style="display: none;">
         <aside id="sidebar">
             <div class="sidebar-header"><h2>ProjectFlow</h2></div>
             <div class="project-management-section">
-                <div class="project-selector-header"><h3>Projects</h3><button id="add-project-btn" class="btn-icon" data-tooltip="Create New Project">+</button></div>
+                <h3>Select Project</h3>
                 <select id="project-selector" class="form-input"></select>
-                <button id="delete-project-btn" class="btn btn-danger btn-small">Delete Current Project</button>
             </div>
             <nav class="sidebar-nav">
                 <ul>
@@ -27,12 +70,16 @@
                     <li><a href="#" class="nav-link" data-view="team">Team</a></li>
                     <li><a href="#" class="nav-link" data-view="milestones">Milestones</a></li>
                     <li><a href="#" class="nav-link" data-view="risks">Risks</a></li>
+                    <!-- Admin-only link -->
+                    <li id="admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="admin">Admin</a></li>
+                    <li id="projects-admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="projects-admin">Projects</a></li>
+                    <!-- Add this list item to the sidebar navigation list -->
+                    <li><a href="#" class="nav-link" data-view="settings">Settings</a></li>
                 </ul>
             </nav>
             <div class="sidebar-footer">
-                <button id="backup-btn" class="btn btn-small">Backup Data</button>
-                <button id="restore-btn" class="btn btn-small">Restore Data</button>
-                <input type="file" id="restore-input" style="display: none;" accept=".json">
+                <div id="current-user-info" style="text-align: center; margin-bottom: 10px; font-size: 0.9em;"></div>
+                <button id="logout-btn" class="btn btn-small">Logout</button>
             </div>
         </aside>
 
@@ -66,16 +113,58 @@
             </section>
 
             <section id="gantt-view" class="view"><header class="view-header"><h1>Gantt Chart (Phases)</h1><div><button id="add-gantt-phase-btn" class="btn btn-primary">Create Phase</button><button id="print-gantt-btn" class="btn" data-tooltip="Print chart as PNG">Print Chart</button></div></header><div id="gantt-chart-container" class="card"></div></section>
-            <section id="team-view" class="view"><header class="view-header"><h1>Team Members</h1><button id="add-member-btn" class="btn btn-primary">Add Member</button></header><div id="team-grid" class="content-container"></div></section>
+            <section id="team-view" class="view"><header class="view-header"><h1>Team Members</h1><button id="add-member-to-project-btn" class="btn btn-primary">Add Member to Project</button></header><div id="team-grid" class="content-container"></div></section>
             <section id="milestones-view" class="view"><header class="view-header"><h1>Milestones</h1><button id="add-milestone-btn" class="btn btn-primary">Create Milestone</button></header><div id="milestone-list" class="content-container"></div></section>
             <section id="risks-view" class="view"><header class="view-header"><h1>Risk Management</h1><button id="add-risk-btn" class="btn btn-primary">Add Risk</button></header><div id="risk-table-container" class="content-container"></div></section>
             <section id="team-member-profile-view" class="view"><div id="team-member-profile-content"></div></section>
+            
+            <!-- Admin View -->
+            <section id="admin-view" class="view">
+                <header class="view-header">
+                    <h1>Admin - User Management</h1>
+                    <button id="add-user-btn" class="btn btn-primary">Add New User</button>
+                </header>
+                <div id="admin-user-list" class="content-container card"></div>
+            </section>
+
+            <section id="projects-admin-view" class="view">
+                <header class="view-header">
+                    <h1>Project Management</h1>
+                    <button id="add-project-admin-btn" class="btn btn-primary">Add New Project</button>
+                </header>
+                <div id="projects-admin-list" class="content-container card">
+                    <!-- Project table will be rendered here by ui.js -->
+                </div>
+            </section>
+
+            <!-- Add this section with the other <section> views -->
+            <section id="settings-view" class="view">
+                <header class="view-header"><h1>Settings</h1></header>
+                <div id="settings-content" class="content-container card" style="max-width: 500px;">
+                    <h3>Change Password</h3>
+                    <form id="change-password-form">
+                        <div class="form-group">
+                            <label for="new-password">New Password</label>
+                            <input type="password" id="new-password" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirm-password">Confirm New Password</label>
+                            <input type="password" id="confirm-password" class="form-input" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Password</button>
+                    </form>
+                </div>
+            </section>
         </main>
     </div>
 
     <div id="modal-container"><div class="modal-backdrop"></div><div class="modal-content"><div class="modal-header"><h2 id="modal-title"></h2><button id="modal-close-btn" class="btn-icon">×</button></div><div id="modal-body" class="modal-body"></div></div></div>
     <div id="loader"><div class="spinner"></div></div>
-    
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
