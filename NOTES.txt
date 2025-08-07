@@ -1,7 +1,0 @@
-there is something wrong with development status I changed the color of one card then the first card was duplciated with that third card
-
-finished tab is not working 
-
-why is a member can still operate and manage? they can only view, in tasks its differnet they can check but they cant delete their tasks assigned to them
-
-and also where is the dashboard for leader/admin, in the initial version when you click the card of member(if you are admin/leader) you can see their tasks completed and if theyre fair/great/medium performance
