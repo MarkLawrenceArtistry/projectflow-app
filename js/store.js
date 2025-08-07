@@ -4,68 +4,280 @@ class Milestone { constructor(id, name, startDate, endDate) { this.id = id; this
 class StatusItem { constructor(id, name, progress, color) { this.id = id; this.name = name; this.progress = progress; this.color = color; } }
 class GanttPhase { constructor(id, name, startDate, endDate, color) { this.id = id; this.name = name; this.startDate = startDate; this.endDate = endDate; this.color = color || '#e74c3c';} }
 class Risk { constructor(id, description, impact, priority) { this.id = id; this.description = description; this.impact = impact; this.priority = priority; } }
-
-class Project { constructor(id, name) { this.id = id; this.name = name; this.tasks = []; this.team = []; this.milestones = []; this.statusItems = []; this.ganttPhases = []; this.risks = []; } }
+class Project { constructor(id, name) { this.id = id; this.name = name; this.tasks = []; this.team = {}; this.milestones = []; this.statusItems = []; this.ganttPhases = []; this.risks = []; } }
+class User { constructor(id, name, email, password, role = 'member') { this.id = id; this.name = name; this.email = email; this.password = password; this.role = role; }}
 
 class Store {
-    constructor() { this.projects = []; this.activeProjectId = null; this.loadFromLocalStorage(); }
-    _commit() { localStorage.setItem('projectflow_data', JSON.stringify({ projects: this.projects, activeProjectId: this.activeProjectId })); }
-    loadFromLocalStorage() {
-        const data = JSON.parse(localStorage.getItem('projectflow_data') || '{}');
-        const projectsData = data.projects || [];
-        this.projects = projectsData.map(pData => {
-            const project = new Project(pData.id, pData.name);
-            project.team = (pData.team || []).map(tm => new TeamMember(tm.id, tm.name, tm.role, tm.avatar));
-            project.tasks = (pData.tasks || []).map(t => new Task(t.id, t.name, t.description, t.assignedTo, t.startDate, t.endDate, t.category, t.priority || 'Medium', t.completed));
-            project.milestones = (pData.milestones || []).map(m => new Milestone(m.id, m.name, m.startDate, m.endDate));
-            project.statusItems = (pData.statusItems || []).map(s => new StatusItem(s.id, s.name, s.progress, s.color));
-            project.ganttPhases = (pData.ganttPhases || []).map(g => new GanttPhase(g.id, g.name, g.startDate, g.endDate, g.color));
-            project.risks = (pData.risks || []).map(r => new Risk(r.id, r.description, r.impact, r.priority));
-            return project;
-        });
-        const activeId = data.activeProjectId;
-        if (activeId && this.projects.some(p => p.id === activeId)) this.activeProjectId = activeId;
-        else if (this.projects.length > 0) this.activeProjectId = this.projects[0].id;
-        else this.addProject("My First Project");
+    constructor() {
+        this.db = null;
+        this.app = null;
+        
+        this.users = [];
+        this.currentUser = null;
+        
+        this.projects = [];
+        this.activeProjectId = null;
+        this.dataLoaded = false;
     }
 
-    getAllData() { return { projects: this.projects, activeProjectId: this.activeProjectId }; }
-    restoreAllData(data) { localStorage.setItem('projectflow_data', JSON.stringify(data)); this.loadFromLocalStorage(); }
-    getActiveProject() { if (!this.activeProjectId) return null; return this.projects.find(p => p.id === this.activeProjectId); }
-    setActiveProject(id) { this.activeProjectId = id; this._commit(); }
-    addProject(name) { const id = `proj_${Date.now()}`; const p = new Project(id, name); this.projects.push(p); this.activeProjectId = id; this._commit(); return p; }
-    deleteProject(id) { this.projects = this.projects.filter(p => p.id !== id); if (this.activeProjectId === id) this.activeProjectId = this.projects.length > 0 ? this.projects[0].id : null; this._commit(); }
-
-    addTeamMember(d){const p=this.getActiveProject();if(p){p.team.push(new TeamMember(`mem_${Date.now()}`,d.name,d.role,d.avatar));this._commit();}}
-    updateTeamMember(id,d){const m=this.getMember(id);if(m){Object.assign(m,d);this._commit();}}
-    deleteTeamMember(id){const p=this.getActiveProject();if(!p)return;p.team=p.team.filter(m=>m.id!==id);p.tasks.forEach(t=>{if(t.assignedTo===id)t.assignedTo=null;});this._commit();}
-    getMember(id){return this.getActiveProject()?.team.find(m=>m.id===id);}
-
-    addTask(d){const p=this.getActiveProject();if(p){p.tasks.push(new Task(`task_${Date.now()}`,d.name,d.description,d.assignedTo,d.startDate,d.endDate,d.category,d.priority));this._commit();}}
-    updateTask(id,d){const t=this.getTask(id);if(t){Object.assign(t,d);this._commit();}}
-    toggleTaskCompletion(id){const t=this.getTask(id);if(t)t.completed=!t.completed;this._commit();}
-    deleteTask(id){const p=this.getActiveProject();if(p)p.tasks=p.tasks.filter(t=>t.id!==id);this._commit();}
-    getTask(id){return this.getActiveProject()?.tasks.find(t=>t.id===id);}
-
-    addMilestone(d){const p=this.getActiveProject();if(p){p.milestones.push(new Milestone(`mile_${Date.now()}`,d.name,d.startDate,d.endDate));this._commit();}}
-    updateMilestone(id,d){const m=this.getMilestone(id);if(m){Object.assign(m,d);this._commit();}}
-    deleteMilestone(id){const p=this.getActiveProject();if(p)p.milestones=p.milestones.filter(m=>m.id!==id);this._commit();}
-    getMilestone(id){return this.getActiveProject()?.milestones.find(m=>m.id===id);}
+    init(db, app) {
+        this.db = db;
+        this.app = app;
+        
+        // First, check for a logged-in user in the session
+        this.checkSession();
+    }
     
-    addStatusItem(d){const p=this.getActiveProject();if(p){p.statusItems.push(new StatusItem(`status_${Date.now()}`,d.name,d.progress,d.color));this._commit();}}
-    updateStatusItem(id,d){const s=this.getStatusItem(id);if(s){Object.assign(s,d);this._commit();}}
-    deleteStatusItem(id){const p=this.getActiveProject();if(p)p.statusItems=p.statusItems.filter(s=>s.id!==id);this._commit();}
-    getStatusItem(id){return this.getActiveProject()?.statusItems.find(s=>s.id===id);}
-    
-    addGanttPhase(d){const p=this.getActiveProject();if(p){p.ganttPhases.push(new GanttPhase(`gantt_${Date.now()}`,d.name,d.startDate,d.endDate,d.color));this._commit();}}
-    updateGanttPhase(id,d){const ph=this.getGanttPhase(id);if(ph){Object.assign(ph,d);this._commit();}}
-    deleteGanttPhase(id){const p=this.getActiveProject();if(p)p.ganttPhases=p.ganttPhases.filter(g=>g.id!==id);this._commit();}
-    getGanttPhase(id){return this.getActiveProject()?.ganttPhases.find(p=>p.id===id);}
+    // --- AUTHENTICATION AND SESSION ---
 
-    addRisk(d){const p=this.getActiveProject();if(p){p.risks.push(new Risk(`risk_${Date.now()}`,d.description,d.impact,d.priority));this._commit();}}
-    updateRisk(id,d){const r=this.getRisk(id);if(r){Object.assign(r,d);this._commit();}}
-    deleteRisk(id){const p=this.getActiveProject();if(p)p.risks=p.risks.filter(r=>r.id!==id);this._commit();}
-    getRisk(id){return this.getActiveProject()?.risks.find(r=>r.id===id);}
+    checkSession() {
+        const userId = sessionStorage.getItem('projectflow_userId');
+        if (userId) {
+            this.db.ref(`/users/${userId}`).once('value', (snapshot) => {
+                this.currentUser = snapshot.val();
+                if (this.currentUser) {
+                    // THE FIX IS HERE: First, make the main app visible.
+                    this.app.showMainApp();
+                    // THEN, start listening for data, which will trigger the first render.
+                    this.initFirebaseListeners();
+                } else {
+                    this.logout();
+                }
+            });
+        } else {
+            this.app.showLogin();
+        }
+    }
+
+    login(email, password) {
+        this.db.ref('/users').orderByChild('email').equalTo(email).once('value', (snapshot) => {
+            if (snapshot.exists()) {
+                const userId = Object.keys(snapshot.val())[0];
+                const user = snapshot.val()[userId];
+
+                if (user.password === password) { // WARNING: Insecure password check
+                    this.currentUser = user;
+                    sessionStorage.setItem('projectflow_userId', user.id);
+                    this.app.showMainApp();
+                    this.initFirebaseListeners();
+                } else {
+                    alert('Incorrect password.');
+                }
+            } else {
+                alert('User with that email does not exist.');
+            }
+        });
+    }
+
+    register(name, email, password) {
+        this.db.ref('/users').orderByChild('email').equalTo(email).once('value', (snapshot) => {
+            if (snapshot.exists()) {
+                alert('A user with this email already exists.');
+            } else {
+                const newUserId = `user_${Date.now()}`;
+                const newUser = new User(newUserId, name, email, password, 'member'); // Default role is member
+                this.db.ref(`/users/${newUserId}`).set(newUser).then(() => {
+                    alert('Registration successful! Please log in.');
+                    this.app.showLogin(true); // Switch to login form
+                });
+            }
+        });
+    }
+    
+    logout() {
+        sessionStorage.removeItem('projectflow_userId');
+        this.currentUser = null;
+        // This will reload the page and the checkSession() will redirect to login
+        window.location.reload();
+    }
+    // PINPOINT: store.js -> Store class (add this new method)
+    changePassword(newPassword) {
+        if (!this.currentUser) return;
+        
+        const userId = this.currentUser.id;
+        this.db.ref(`/users/${userId}/password`).set(newPassword)
+            .then(() => {
+                alert('Password updated successfully!');
+            })
+            .catch(error => {
+                alert('An error occurred. Could not update password.');
+                console.error("Password update error:", error);
+            });
+    }
+
+    updateProject(id, data) {
+        // 'data' will be an object like { name: "New Project Name" }
+        this.db.ref(`projects/${id}`).update(data);
+    }
+
+    initFirebaseListeners() {
+        this.db.ref('/').on('value', (snapshot) => {
+            const data = snapshot.val() || {}; // Ensure data is an object
+
+            this.users = data.users ? Object.values(data.users) : [];
+
+            if (data.projects) {
+                this.projects = Object.values(data.projects).map(pData => {
+                    const project = new Project(pData.id, pData.name);
+                    project.team = pData.team || {};
+                    project.tasks = pData.tasks ? Object.values(pData.tasks) : [];
+                    project.milestones = pData.milestones ? Object.values(pData.milestones) : [];
+                    project.statusItems = pData.statusItems ? Object.values(pData.statusItems) : [];
+                    project.ganttPhases = pData.ganttPhases ? Object.values(pData.ganttPhases) : [];
+                    project.risks = pData.risks ? Object.values(pData.risks) : [];
+                    return project;
+                });
+                // Get the active project ID from the database.
+                this.activeProjectId = data.activeProjectId || null;
+            } else {
+                this.projects = [];
+                this.activeProjectId = null;
+            }
+
+            // --- REVISED LOGIC TO PREVENT RESETTING THE PROJECT ---
+            const visibleProjects = this.getVisibleProjects();
+            const activeProjectIsVisible = this.activeProjectId && visibleProjects.some(p => p.id === this.activeProjectId);
+
+            if (!activeProjectIsVisible && visibleProjects.length > 0) {
+                // The active project is invalid or not set, but other projects are available.
+                // Default to the first one. This will trigger the listener again.
+                this.setActiveProject(visibleProjects[0].id);
+                return; // Exit to wait for the listener to re-run with the correct project.
+            } else if (visibleProjects.length === 0 && this.currentUser.role !== 'member') {
+                // No projects exist for this privileged user. Create a default one.
+                this.addProject("My First Project");
+                return; // Exit to wait for the listener to re-run.
+            }
+
+            if (!this.dataLoaded) {
+                this.dataLoaded = true;
+                this.app.initMainApp();
+            } else {
+                this.app.render();
+            }
+        });
+    }
+
+    // --- USER MANAGEMENT (ADMIN) ---
+    getAllUsers() {
+        return this.users;
+    }
+    addUser(data) {
+        const id = `user_${Date.now()}`;
+        const newUser = new User(id, data.name, data.email, data.password, data.role);
+        this.db.ref(`/users/${id}`).set(newUser);
+    }
+    updateUser(id, data) {
+        this.db.ref(`/users/${id}`).update(data);
+    }
+    deleteUser(id) {
+        // Here you would also want to remove the user from all project teams
+        this.db.ref(`/users/${id}`).remove();
+    }
+
+    // --- DATA GETTERS WITH ROLE-BASED FILTERING ---
+    getVisibleProjects() {
+        if (!this.currentUser) return [];
+        if (this.currentUser.role === 'admin' || this.currentUser.role === 'leader') {
+            return this.projects;
+        }
+        // For members, only return projects they are part of
+        return this.projects.filter(p => p.team && p.team[this.currentUser.id]);
+    }
+
+    getActiveProject() {
+        const visibleProjects = this.getVisibleProjects();
+        if (!this.activeProjectId || !visibleProjects.some(p => p.id === this.activeProjectId)) return null;
+        return this.projects.find(p => p.id === this.activeProjectId);
+    }
+    
+        // PINPOINT: store.js -> Store class -> getProjectTeamMembers method
+        getProjectTeamMembers() {
+        const project = this.getActiveProject();
+        if (!project || !project.team) return [];
+        
+        return Object.values(project.team)
+            .map(profile => {
+                const user = this.users.find(u => u.id === profile.userId);
+                // If the user was deleted but still exists in the project, 'user' will be undefined.
+                if (!user) {
+                    return null; // Mark this profile for removal
+                }
+                return {
+                    ...user,
+                    profileRole: profile.profileRole,
+                    avatar: profile.avatar
+                };
+            })
+            .filter(Boolean); // This is a clever trick to remove all null/undefined items from the array.
+    }
+
+    // PINPOINT: store.js -> Store class -> addMemberToProject method
+    addMemberToProject(userId, profileRole, avatar) {
+        const profileData = {
+            userId: userId,
+            profileRole: profileRole,
+            avatar: avatar || ''
+        };
+        // Use the userId as the key for the profile in the team object
+        this.db.ref(`projects/${this.activeProjectId}/team/${userId}`).set(profileData);
+    }
+
+    // PINPOINT: store.js -> Store class -> removeMemberFromProject method
+    removeMemberFromProject(userId) {
+        this.db.ref(`projects/${this.activeProjectId}/team/${userId}`).remove();
+    }
+    
+    // PINPOINT: store.js -> Store class -> getMember method
+    getMember(id) {
+        // This now correctly gets the full merged profile (user data + project profile)
+        return this.getProjectTeamMembers().find(m => m.id === id);
+    }
+
+    // --- PROJECT & ITEM CRUD ---
+    setActiveProject(id) {
+        this.activeProjectId = id;
+        this.db.ref('activeProjectId').set(id);
+    }
+    addProject(name) {
+        const newProjectRef = this.db.ref('projects').push();
+        const projectData = { id: newProjectRef.key, name: name };
+        newProjectRef.set(projectData);
+        this.setActiveProject(newProjectRef.key);
+    }
+    deleteProject(id) {
+        if (this.projects.length <= 1) {
+            alert("You cannot delete the last project.");
+            return;
+        }
+        this.db.ref(`projects/${id}`).remove();
+    }
+
+    // --- Other CRUD methods remain largely the same, just ensure they use this.activeProjectId
+    addTeamMember(data) { const id = `mem_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/team/${id}`).set(new TeamMember(id, data.name, data.role, data.avatar)); }
+    updateTeamMember(id, data) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).update(data); }
+    deleteTeamMember(id) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).remove(); }
+    addTask(data) { const id = `task_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).set(new Task(id, data.name, data.description, data.assignedTo, data.startDate, data.endDate, data.category, data.priority)); }
+    updateTask(id, data) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(data); }
+    toggleTaskCompletion(id) { const task = this.getTask(id); if (task) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/completed`).set(!task.completed); } }
+    deleteTask(id) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).remove(); }
+    getTask(id) { return this.getActiveProject()?.tasks.find(t => t.id === id); }
+    addMilestone(d) { const id = `mile_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).set(new Milestone(id, d.name, d.startDate, d.endDate)); }
+    updateMilestone(id, d) { this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).update(d); }
+    deleteMilestone(id) { this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).remove(); }
+    getMilestone(id) { return this.getActiveProject()?.milestones.find(m => m.id === id); }
+    addStatusItem(d) { const id = `status_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).set(new StatusItem(id, d.name, d.progress, d.color)); }
+    updateStatusItem(id, d) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).update(d); }
+    deleteStatusItem(id) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).remove(); }
+    getStatusItem(id) { return this.getActiveProject()?.statusItems.find(s => s.id === id); }
+    addGanttPhase(d) { const id = `gantt_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).set(new GanttPhase(id, d.name, d.startDate, d.endDate, d.color)); }
+    updateGanttPhase(id, d) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).update(d); }
+    deleteGanttPhase(id) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).remove(); }
+    getGanttPhase(id) { return this.getActiveProject()?.ganttPhases.find(p => p.id === id); }
+    addRisk(d) { const id = `risk_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).set(new Risk(id, d.description, d.impact, d.priority)); }
+    updateRisk(id, d) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).update(d); }
+    deleteRisk(id) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).remove(); }
+    getRisk(id) { return this.getActiveProject()?.risks.find(r => r.id === id); }
 }
 
 export const store = new Store();
