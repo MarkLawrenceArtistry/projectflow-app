@@ -28,7 +28,6 @@
                         <input type="password" id="login-password" class="form-input" required>
                     </div>
                     <button type="submit" class="btn btn-primary">Login</button>
-                    <p class="auth-toggle">Don't have an account? <a href="#" id="show-register">Register</a></p>
                 </form>
             </div>
             <div class="auth-form-container" id="register-container" style="display: none;">
@@ -46,7 +45,7 @@
                         <label for="register-password">Password</label>
                         <input type="password" id="register-password" class="form-input" required>
                     </div>
-                    <button type="submit" class="btn btn-primary">Register</button>
+                    <button type="submit" class="btn btn-primary" disabled>Register</button>
                     <p class="auth-toggle">Already have an account? <a href="#" id="show-login">Login</a></p>
                 </form>
             </div>
@@ -62,20 +61,36 @@
                 <select id="project-selector" class="form-input"></select>
             </div>
             <nav class="sidebar-nav">
-                <ul>
-                    <li><a href="#" class="nav-link active" data-view="dashboard">Dashboard</a></li>
-                    <li><a href="#" class="nav-link" data-view="status">Status</a></li>
-                    <li><a href="#" class="nav-link" data-view="tasks">Tasks</a></li>
-                    <li><a href="#" class="nav-link" data-view="gantt">Gantt Chart</a></li>
-                    <li><a href="#" class="nav-link" data-view="team">Team</a></li>
-                    <li><a href="#" class="nav-link" data-view="milestones">Milestones</a></li>
-                    <li><a href="#" class="nav-link" data-view="risks">Risks</a></li>
-                    <!-- Admin-only link -->
-                    <li id="admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="admin">Admin</a></li>
-                    <li id="projects-admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="projects-admin">Projects</a></li>
-                    <!-- Add this list item to the sidebar navigation list -->
-                    <li><a href="#" class="nav-link" data-view="settings">Settings</a></li>
-                </ul>
+                <details class="nav-accordion" open>
+                    <summary>Main Menu</summary>
+                    <ul>
+                        <li><a href="#" class="nav-link active" data-view="dashboard">Dashboard</a></li>
+                        <li><a href="#" class="nav-link" data-view="tasks">Tasks</a></li>
+                        <li><a href="#" class="nav-link" data-view="gantt">Gantt Chart</a></li>
+                    </ul>
+                </details>
+                <details class="nav-accordion">
+                    <summary>Project Details</summary>
+                    <ul>
+                        <li><a href="#" class="nav-link" data-view="team">Team</a></li>
+                        <li><a href="#" class="nav-link" data-view="status">Status</a></li>
+                        <li><a href="#" class="nav-link" data-view="milestones">Milestones</a></li>
+                        <li><a href="#" class="nav-link" data-view="risks">Risks</a></li>
+                    </ul>
+                </details>
+                <details class="nav-accordion">
+                    <summary>Admin</summary>
+                    <ul>
+                        <li id="admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="admin">Users</a></li>
+                        <li id="projects-admin-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="projects-admin">Projects</a></li>
+                    </ul>
+                </details>
+                 <details class="nav-accordion">
+                    <summary>Account</summary>
+                    <ul>
+                        <li><a href="#" class="nav-link" data-view="settings">Settings</a></li>
+                    </ul>
+                </details>
             </nav>
             <div class="sidebar-footer">
                 <div id="current-user-info" style="text-align: center; margin-bottom: 10px; font-size: 0.9em;"></div>
@@ -99,6 +114,12 @@
                     <button class="tab-link" data-tab="finished">Finished</button>
                 </div>
                 <div class="task-filters card">
+                    <select id="task-filter-sort" class="form-select">
+                        <option value="priority">Sort by Priority</option>
+                        <option value="deadline-asc">Sort by Deadline (Soonest)</option>
+                        <option value="deadline-desc">Sort by Deadline (Latest)</option>
+                        <option value="name-asc">Sort by Name (A-Z)</option>
+                    </select>
                     <select id="task-filter-member" class="form-select"><option value="all">All Members</option></select>
                     <select id="task-filter-priority" class="form-select">
                         <option value="all">All Priorities</option>
@@ -107,6 +128,13 @@
                         <option value="Low">Low</option>
                     </select>
                     <select id="task-filter-category" class="form-select"><option value="all">All Categories</option></select>
+                </div>
+                <div id="task-selection-bar" class="card">
+                    <span id="selection-count"></span>
+                    <div class="selection-actions">
+                        <button id="selection-delete-btn" class="btn btn-danger">Delete Selected</button>
+                        <button id="selection-clear-btn" class="btn">Clear Selection</button>
+                    </div>
                 </div>
                 <div id="task-list-pending" class="content-container tab-content active"></div>
                 <div id="task-list-finished" class="content-container tab-content"></div>
@@ -166,6 +194,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 </html>

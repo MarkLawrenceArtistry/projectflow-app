@@ -19,7 +19,8 @@ class App {
     constructor() {
         this.currentView = 'dashboard';
         this.currentMemberId = null;
-        this.mainAppInitialized = false; // Flag to ensure listeners are set only once
+        this.mainAppInitialized = false;
+        this.selectedTaskIds = new Set(); // Add this line
     }
 
     // --- AUTHENTICATION UI FLOW ---
@@ -54,6 +55,8 @@ class App {
     // PINPOINT: app.js -> App class -> render method
     // PINPOINT: In js/app.js, inside the App class, REPLACE the render method.
 
+    // PINPOINT: In js/app.js, inside the App class, REPLACE the render method.
+
     render() {
         ui.showLoader();
         const currentUser = store.currentUser;
@@ -66,7 +69,7 @@ class App {
         document.getElementById('projects-admin-nav-link').style.display = isPrivileged ? 'block' : 'none';
         document.querySelectorAll('.btn-primary').forEach(btn => { btn.style.display = isPrivileged ? 'inline-block' : 'none'; });
         document.getElementById('task-filter-member').style.display = isPrivileged ? 'inline-block' : 'none';
-         const visibleProjects = store.getVisibleProjects();
+        const visibleProjects = store.getVisibleProjects();
         const project = store.getActiveProject();
         ui.renderProjects(visibleProjects, store.activeProjectId);
 
@@ -97,13 +100,29 @@ class App {
                 const categoryFilter = document.getElementById('task-filter-category').value;
                 if (priorityFilter !== 'all') { filteredTasks = filteredTasks.filter(t => t.priority === priorityFilter); }
                 if (categoryFilter !== 'all') { filteredTasks = filteredTasks.filter(t => t.category === categoryFilter); }
-                ui.renderTasks(filteredTasks, team, currentUser);
+                ui.renderTasks(filteredTasks, team, currentUser, this.selectedTaskIds);
             },
             milestones: () => ui.renderMilestones(project.milestones, currentUser),
-            status: () => ui.renderStatus(project.statusItems, currentUser),
+            status: () => {
+                ui.renderStatus(project.statusItems, currentUser);
+                // Initialize SortableJS here, where 'store' is defined
+                if (currentUser.role !== 'member') {
+                    const statusListEl = document.getElementById('status-list');
+                    if (statusListEl) {
+                        new Sortable(statusListEl, {
+                            handle: '.drag-handle',
+                            animation: 150,
+                            onEnd: function (evt) {
+                                const orderedIds = Array.from(evt.to.children).map(item => item.dataset.id);
+                                store.updateStatusOrder(orderedIds);
+                            }
+                        });
+                    }
+                }
+            },
             risks: () => ui.renderRisks(project.risks, currentUser),
             gantt: () => gantt.render(project),
-            settings: () => { /* Renders nothing, the view is static HTML */ },
+            settings: () => {},
             admin: () => ui.renderAdminView(store.getAllUsers(), currentUser),
             'projects-admin': () => ui.renderProjectsAdminView(store.projects, currentUser),
             'team-member-profile': () => {
@@ -121,16 +140,9 @@ class App {
     setupAuthEventListeners() {
         document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); store.login(document.getElementById('login-email').value, document.getElementById('login-password').value); });
         document.getElementById('register-form').addEventListener('submit', e => { e.preventDefault(); store.register(document.getElementById('register-name').value, document.getElementById('register-email').value, document.getElementById('register-password').value); });
-        document.getElementById('show-register').addEventListener('click', e => { e.preventDefault(); this.showLogin(false); });
+        // document.getElementById('show-register').addEventListener('click', e => { e.preventDefault(); this.showLogin(false); });
         document.getElementById('show-login').addEventListener('click', e => { e.preventDefault(); this.showLogin(true); });
     }
-
-    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
-
-    
-    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
-
-    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
 
     setupMainAppEventListeners() {
         if (this.mainAppInitialized) return;
@@ -142,14 +154,56 @@ class App {
                 e.preventDefault();
                 this.currentView = link.dataset.view;
                 this.render();
+                // Close sidebar on mobile after navigation
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.remove('open');
             }
         });
         const mobileMenuBtn = document.getElementById('mobile-menu-toggle');
         const sidebar = document.getElementById('sidebar');
+
+        // --- NEW AND IMPROVED SIDEBAR LOGIC ---
+
+        // Function to show the hamburger button
+        const showHamburger = () => {
+            mobileMenuBtn.style.opacity = '1';
+            mobileMenuBtn.style.pointerEvents = 'auto';
+        };
+
+        // Function to hide the hamburger button
+        const hideHamburger = () => {
+            mobileMenuBtn.style.opacity = '0';
+            mobileMenuBtn.style.pointerEvents = 'none';
+        };
+
+        // 1. When you click the hamburger, open the menu and hide the button.
         mobileMenuBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            sidebar.classList.toggle('open');
+            e.stopPropagation(); // Prevents the document click listener from firing immediately
+            sidebar.classList.add('open');
+            hideHamburger();
         });
+
+        // 2. When you click a nav link, close the menu and show the button again.
+        document.querySelector('.sidebar-nav').addEventListener('click', e => {
+            const link = e.target.closest('.nav-link');
+            if (link) {
+                e.preventDefault();
+                this.currentView = link.dataset.view;
+                this.render();
+                sidebar.classList.remove('open');
+                showHamburger();
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            // ...if the menu is open AND the click was NOT on the sidebar itself...
+            if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
+                // ...close the menu and show the button again.
+                sidebar.classList.remove('open');
+                showHamburger();
+            }
+        });
+
         ui.projectSelector.addEventListener('change', e => store.setActiveProject(e.target.value));
 
         const mainContent = document.getElementById('main-content');
@@ -178,19 +232,39 @@ class App {
             }
             if (e.target.closest('#tasks-view')) {
                 const taskItem = e.target.closest('.task-item');
-                if (!taskItem) return;
-                const taskId = taskItem.dataset.id;
                 const action = e.target.dataset.action;
 
-                if (action === 'view-details') this.handleTaskDetails(taskId);
-                else if (action === 'acknowledge') this.handleTaskAcknowledge(taskId);
-                else if (action === 'mark-done') store.requestTaskCompletion(taskId, true);
-                else if (action === 'approve') store.toggleTaskCompletion(taskId);
-                else if (action === 'mark-complete') store.toggleTaskCompletion(taskId);
-                else if (action === 'restore') store.restoreTask(taskId);
-                else if (e.target.closest('.edit-btn')) this.handleTaskForm(taskId);
-                else if (e.target.closest('.delete-btn')) this.handleTaskDelete(taskId);
-                return;
+                if (action === 'select-task' && taskItem) {
+                    const taskId = taskItem.dataset.id;
+                    if (this.selectedTaskIds.has(taskId)) this.selectedTaskIds.delete(taskId);
+                    else this.selectedTaskIds.add(taskId);
+                    this.render();
+                    return;
+                }
+                
+                if (taskItem) {
+                    const taskId = taskItem.dataset.id;
+                    if (action === 'view-details') this.handleTaskDetails(taskId);
+                    else if (action === 'acknowledge') this.handleTaskAcknowledge(taskId);
+                    else if (action === 'mark-done') store.requestTaskCompletion(taskId, true);
+                    else if (action === 'approve') store.toggleTaskCompletion(taskId);
+                    else if (action === 'mark-complete') store.toggleTaskCompletion(taskId);
+                    else if (action === 'restore') store.restoreTask(taskId);
+                    else if (action === 'extend-deadline') store.extendTaskDeadline(taskId);
+                    else if (e.target.closest('.edit-btn')) this.handleTaskForm(taskId);
+                    else if (e.target.closest('.delete-btn')) this.handleTaskDelete(taskId);
+                    return;
+                }
+            }
+            if (e.target.closest('#task-selection-bar')) {
+                if (e.target.id === 'selection-delete-btn') {
+                    if (confirm(`Are you sure you want to delete ${this.selectedTaskIds.size} tasks? This cannot be undone.`)) {
+                        store.deleteMultipleTasks(this.selectedTaskIds);
+                    }
+                } else if (e.target.id === 'selection-clear-btn') {
+                    this.selectedTaskIds.clear();
+                    this.render();
+                }
             }
             const views = ['milestones', 'status', 'risks', 'projects-admin'];
             for (const view of views) {
@@ -244,7 +318,7 @@ class App {
         setupListener('add-risk-btn', 'click', () => this.handleRiskForm());
         setupListener('add-gantt-phase-btn', 'click', () => this.handleGanttPhaseForm());
         setupListener('add-project-admin-btn', 'click', () => this.handleProjectForm());
-
+        setupListener('task-filter-sort', 'change', () => this.render());
         setupListener('task-filter-member', 'change', () => this.render());
         setupListener('task-filter-priority', 'change', () => this.render());
         setupListener('task-filter-category', 'change', () => this.render());

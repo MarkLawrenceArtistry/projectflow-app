@@ -161,46 +161,35 @@ class Store {
         // 'data' will be an object like { name: "New Project Name" }
         this.db.ref(`projects/${id}`).update(data);
     }
-    
     initFirebaseListeners() {
         this.db.ref('/presence').on('value', (snapshot) => {
             this.onlineUsers = snapshot.val() ? Object.values(snapshot.val()) : [];
-            if (this.dataLoaded) {
-                this.app.render();
-            }
+            if (this.dataLoaded) { this.app.render(); }
         });
 
         this.db.ref('/').on('value', (snapshot) => {
             const data = snapshot.val() || {};
-
             this.users = data.users ? Object.values(data.users) : [];
-
             if (data.projects) {
                 this.projects = Object.values(data.projects).map(pData => {
                     const project = new Project(pData.id, pData.name);
                     project.team = pData.team || {};
-                    
                     if (pData.tasks) {
-                        project.tasks = Object.values(pData.tasks).map(tData => {
-                            return new Task(
-                                tData.id, tData.name, tData.description, 
-                                tData.assignedTo, tData.startDate, tData.endDate, 
-                                tData.category, tData.priority, tData.completed || false, 
-                                tData.acknowledged || false, tData.progress || 0,
-                                tData.pendingCompletion || false
-                            );
-                        });
-                    } else {
-                        project.tasks = [];
-                    }
-
+                        project.tasks = Object.values(pData.tasks).map(tData => new Task(tData.id, tData.name, tData.description, tData.assignedTo, tData.startDate, tData.endDate, tData.category, tData.priority, tData.completed || false, tData.acknowledged || false, tData.progress || 0, tData.pendingCompletion || false));
+                    } else { project.tasks = []; }
+                    
                     project.milestones = pData.milestones ? Object.values(pData.milestones) : [];
-                    project.statusItems = pData.statusItems ? Object.values(pData.statusItems) : [];
                     project.ganttPhases = pData.ganttPhases ? Object.values(pData.ganttPhases) : [];
                     project.risks = pData.risks ? Object.values(pData.risks) : [];
+
+                    // New Status Item Loading
+                    project.rawStatusData = pData.statusItems || {}; // Store raw data with keys
+                    project.statusItems = pData.statusItems 
+                        ? Object.values(pData.statusItems).sort((a, b) => (a.order || 0) - (b.order || 0))
+                        : [];
+
                     return project;
                 });
-                
                 this.activeProjectId = sessionStorage.getItem('projectflow_activeProjectId') || null;
             } else {
                 this.projects = [];
@@ -225,6 +214,55 @@ class Store {
                 this.app.render();
             }
         });
+    }
+
+    extendTaskDeadline(id) {
+        if (!this.activeProjectId || !id) return;
+        const task = this.getTask(id);
+        if (!task) return;
+
+        const currentDueDate = task.endDate ? new Date(task.endDate) : new Date();
+        currentDueDate.setMinutes(currentDueDate.getMinutes() + currentDueDate.getTimezoneOffset()); // Adjust for timezone
+        currentDueDate.setDate(currentDueDate.getDate() + 7);
+
+        const newEndDate = currentDueDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/endDate`).set(newEndDate);
+    }
+    deleteMultipleTasks(taskIds) {
+        if (!this.activeProjectId || taskIds.size === 0) return;
+        
+        const updates = {};
+        taskIds.forEach(id => {
+            updates[`/projects/${this.activeProjectId}/tasks/${id}`] = null;
+        });
+
+        this.db.ref().update(updates)
+            .then(() => {
+                // After successful deletion, clear the selection in the app
+                this.app.selectedTaskIds.clear();
+                this.app.render(); // Re-render to update the UI
+            })
+            .catch(error => {
+                console.error("Batch delete failed: ", error);
+                alert("Could not delete all selected tasks. Please try again.");
+            });
+    }
+
+    updateStatusOrder(orderedIds) {
+        if (!this.activeProjectId) return;
+        const project = this.getActiveProject();
+        if (!project) return;
+    
+        const updates = {};
+        orderedIds.forEach((id, index) => {
+            // Find the original key for the status item to update its order property
+            const originalKey = Object.keys(project.rawStatusData || {}).find(key => project.rawStatusData[key].id === id);
+            if (originalKey) {
+                updates[`/projects/${this.activeProjectId}/statusItems/${originalKey}/order`] = index;
+            }
+        });
+    
+        this.db.ref().update(updates);
     }
 
     // --- USER MANAGEMENT (ADMIN) ---

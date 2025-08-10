@@ -234,17 +234,22 @@ class UI {
         </form>`;
     }
     
-    renderTasks(tasks, team, currentUser) {
+    // PINPOINT: In js/ui.js, inside the UI class, REPLACE the renderTasks method.
+
+    renderTasks(tasks, team, currentUser, selectedTaskIds) {
         const priorityOrder = { 'High': 1, 'Medium': 2, 'Low': 3 };
         const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
     
-        const sortedTasks = tasks.slice().sort((a, b) => {
-            const priorityA = priorityOrder[a.priority] || 4;
-            const priorityB = priorityOrder[b.priority] || 4;
-            if (priorityA !== priorityB) return priorityA - priorityB;
-            return new Date(a.endDate) - new Date(b.endDate);
-        });
-    
+        const sortedTasks = tasks.slice();
+        
+        const sortMethod = document.getElementById('task-filter-sort')?.value || 'priority';
+        switch (sortMethod) {
+            case 'deadline-asc': sortedTasks.sort((a, b) => new Date(a.endDate) - new Date(b.endDate)); break;
+            case 'deadline-desc': sortedTasks.sort((a, b) => new Date(b.endDate) - new Date(a.endDate)); break;
+            case 'name-asc': sortedTasks.sort((a, b) => a.name.localeCompare(b.name)); break;
+            case 'priority': default: sortedTasks.sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4)); break;
+        }
+
         const pendingTasks = sortedTasks.filter(t => !t.completed);
         const finishedTasks = sortedTasks.filter(t => t.completed);
     
@@ -254,50 +259,31 @@ class UI {
             let actionButtons = '';
             let statusIndicator = '';
             let progressBarHtml = '';
-    
+            
+            const isSelected = selectedTaskIds.has(task.id);
+
             if (task.completed) {
-                if(isPrivileged) {
-                    actionButtons += `<button class="btn btn-small btn-restore" data-action="restore">Restore</button>`;
-                }
+                if(isPrivileged) actionButtons += `<button class="btn btn-small btn-restore" data-action="restore">Restore</button>`;
             } else {
-                if (isPrivileged && task.acknowledged && !task.pendingCompletion) {
-                    statusIndicator += `<span class="task-status-indicator ack" data-tooltip="Acknowledged">✔️</span>`;
-                }
-                if (task.pendingCompletion) {
-                    statusIndicator += `<span class="task-status-indicator pending" data-tooltip="Pending Approval">🕒</span>`;
-                }
-        
-                if (isAssignee && !task.acknowledged) {
-                    actionButtons += `<button class="btn btn-small btn-ack" data-action="acknowledge">Acknowledge</button>`;
-                }
-                if (isAssignee && task.acknowledged && !task.pendingCompletion) {
-                    actionButtons += `<button class="btn btn-small btn-done" data-action="mark-done">Mark as Done</button>`;
-                }
-                if (isPrivileged && task.pendingCompletion) {
-                    actionButtons += `<button class="btn btn-small btn-approve" data-action="approve">Approve</button>`;
-                }
+                if (isPrivileged && task.acknowledged && !task.pendingCompletion) statusIndicator += `<span class="task-status-indicator ack" data-tooltip="Acknowledged">✔️</span>`;
+                if (task.pendingCompletion) statusIndicator += `<span class="task-status-indicator pending" data-tooltip="Pending Approval">🕒</span>`;
+                if (isAssignee && !task.acknowledged) actionButtons += `<button class="btn btn-small btn-ack" data-action="acknowledge">Acknowledge</button>`;
+                if (isAssignee && task.acknowledged && !task.pendingCompletion) actionButtons += `<button class="btn btn-small btn-done" data-action="mark-done">Mark as Done</button>`;
+                if (isPrivileged && task.pendingCompletion) actionButtons += `<button class="btn btn-small btn-approve" data-action="approve">Approve</button>`;
                 if (isPrivileged && !task.pendingCompletion) {
                     actionButtons += `<button class="btn btn-small btn-complete-shortcut" data-action="mark-complete">Mark as Complete</button>`;
+                    actionButtons += `<button class="btn btn-small btn-extend" data-action="extend-deadline" data-tooltip="Extend Deadline by 1 Week">＋1w</button>`;
                 }
             }
-            
             actionButtons += `<button class="btn btn-small btn-details" data-action="view-details">Details</button>`;
-    
             const canEditProgress = isAssignee && task.acknowledged && !task.pendingCompletion && !task.completed;
-            
             if (canEditProgress) {
-                progressBarHtml = `
-                    <div class="task-progress-container">
-                        <input type="range" min="0" max="100" value="${task.progress}" class="task-progress-slider" style="--progress-percent: ${task.progress}%;">
-                        <span class="task-progress-percentage">${task.progress}%</span>
-                    </div>
-                `;
+                progressBarHtml = `<div class="task-progress-container"><input type="range" min="0" max="100" value="${task.progress}" class="task-progress-slider" style="--progress-percent: ${task.progress}%;"><span class="task-progress-percentage">${task.progress}%</span></div>`;
             } else {
                 progressBarHtml = `<div class="task-progress-bar-container"><div class="task-progress-bar-fill" style="width: ${task.progress}%;"></div></div>`;
             }
-
-            return `
-            <div class="task-item card" data-id="${task.id}">
+            return `<div class="task-item card ${isSelected ? 'selected' : ''}" data-id="${task.id}">
+                ${isPrivileged ? `<input type="checkbox" class="task-selection-checkbox" data-action="select-task" ${isSelected ? 'checked' : ''}>` : ''}
                 <div class="task-item-main">
                     <div class="task-item-info">
                         <div class="task-name-wrapper"><span class="task-name ${task.completed ? "completed" : ""}">${statusIndicator}${task.name}</span></div>
@@ -314,9 +300,17 @@ class UI {
                 ${this.createItemActionsHTML("Task", currentUser)}
             </div>`;
         };
-    
         this.taskListPending.innerHTML = pendingTasks.length > 0 ? pendingTasks.map(createTaskHTML).join('') : '<div class="card"><p>No pending tasks.</p></div>';
         this.taskListFinished.innerHTML = finishedTasks.length > 0 ? finishedTasks.map(createTaskHTML).join('') : '<div class="card"><p>No finished tasks.</p></div>';
+    
+        // Render Selection Bar
+        const selectionBar = document.getElementById('task-selection-bar');
+        if (selectedTaskIds.size > 0) {
+            selectionBar.querySelector('#selection-count').textContent = `${selectedTaskIds.size} selected`;
+            selectionBar.classList.add('visible');
+        } else {
+            selectionBar.classList.remove('visible');
+        }
     }
     createTaskItemHTML(task,team){const assignee=team.find(m=>m.id===task.assignedTo);return`<div class="task-item card" data-id="${task.id}"><input type="checkbox" class="task-item-checkbox" ${task.completed?"checked":""} data-tooltip="Toggle completion"><div class="task-item-info"><span class="task-name ${task.completed?"completed":""}">${task.name}</span><div class="task-metadata"><span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span><span>${assignee?`👤 ${assignee.name}`:""}</span><span>${task.category?`📁 ${task.category}`:""}</span><strong data-tooltip="Deadline">${this.formatDate(task.endDate,!0)}</strong></div></div><div class="item-actions">${this.createItemActionsHTML("Task")}</div></div>`}
     renderMilestones(milestones, currentUser) {
@@ -337,6 +331,7 @@ class UI {
             ? '<div class="card"><p>No status items.</p></div>' 
             : items.map(i => `
                 <div class="status-item card" data-id="${i.id}">
+                    <div class="drag-handle" data-tooltip="Drag to reorder">⠿</div>
                     <div class="status-item-info">
                         <span class="status-item-name">${i.name}</span>
                         <span class="status-item-percentage-text">${i.progress}% Complete</span>
@@ -348,7 +343,7 @@ class UI {
                 </div>
             `).join('');
     }
-        // PINPOINT: ui.js -> UI class (add this new method)
+    // PINPOINT: ui.js -> UI class (add this new method)
     renderTeamMemberProfile(member, tasks) {
         if (!member) {
             this.teamMemberProfileContent.innerHTML = "<p>Member not found.</p>";
