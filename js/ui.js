@@ -21,7 +21,9 @@ class UI {
         }
     }
     clearAllDataViews(){[this.dashboardContent,this.teamGrid,this.taskListPending,this.taskListFinished,this.milestoneList,this.statusList,this.riskTableContainer].forEach(el=>el.innerHTML="")}
-    renderDashboard(p){
+    // PINPOINT: In js/ui.js, inside the UI class, REPLACE the renderDashboard method.
+
+    renderDashboard(p, onlineUsers = []) {
         if (!p) {
             this.dashboardContent.innerHTML = '<div class="card"><p>Select a project to view its dashboard.</p></div>';
             return;
@@ -34,12 +36,11 @@ class UI {
         const overallProgress = totalTasks > 0 ? Math.round(completedTasksCount / totalTasks * 100) : 0;
         const overdueTasksCount = tasks.filter(t => !t.completed && t.endDate && new Date(t.endDate) < new Date()).length;
 
-        // --- Helper function to check if a date is in the current week (Sun-Sat) ---
         const isDateInThisWeek = (dateStr) => {
             if (!dateStr) return false;
             const taskDate = new Date(dateStr);
             const today = new Date();
-            const dayOfWeek = today.getDay(); // Sunday = 0, Saturday = 6
+            const dayOfWeek = today.getDay();
             const startOfWeek = new Date(today.setDate(today.getDate() - dayOfWeek));
             startOfWeek.setHours(0, 0, 0, 0);
             const endOfWeek = new Date(startOfWeek);
@@ -52,61 +53,26 @@ class UI {
             .filter(task => !task.completed && isDateInThisWeek(task.endDate))
             .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 
-        let thisWeekHtml = '';
-        if (tasksThisWeek.length > 0) {
-            thisWeekHtml = tasksThisWeek.map(task => {
-                const deadline = this.formatDate(task.endDate, true);
-                return `<div class="dashboard-task-item">
-                            <span>${task.name}</span>
-                            <span class="task-due-date">${deadline}</span>
-                        </div>`;
-            }).join('');
-        } else {
-            thisWeekHtml = '<p class="empty-state">No tasks due this week. Great job!</p>';
-        }
+        let thisWeekHtml = tasksThisWeek.length > 0
+            ? tasksThisWeek.map(task => `<div class="dashboard-task-item"><span>${task.name}</span><span class="task-due-date">${this.formatDate(task.endDate, true)}</span></div>`).join('')
+            : '<p class="empty-state">No tasks due this week. Great job!</p>';
 
-        let statusHtml = '';
-        if (statusItems.length > 0) {
-            statusHtml = statusItems.map(item => `
-                <div class="dashboard-status-item">
-                    <div class="dashboard-status-info">
-                        <span>${item.name}</span>
-                        <span style="color: ${item.color}; font-weight: 600;">${item.progress}%</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar-fill" style="width: ${item.progress}%; background-color: ${item.color};"></div>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            statusHtml = '<p class="empty-state">No development statuses defined.</p>';
-        }
+        let statusHtml = statusItems.length > 0
+            ? statusItems.map(item => `<div class="dashboard-status-item"><div class="dashboard-status-info"><span>${item.name}</span><span style="color: ${item.color}; font-weight: 600;">${item.progress}%</span></div><div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${item.progress}%; background-color: ${item.color};"></div></div></div>`).join('')
+            : '<p class="empty-state">No development statuses defined.</p>';
+        
+        let onlineUsersHtml = onlineUsers.length > 0
+            ? onlineUsers.map(user => `<div class="online-user-item"><span class="online-indicator"></span><span>${user.name}</span><span class="online-user-role">${user.role}</span></div>`).join('')
+            : '<p class="empty-state">No users are currently online.</p>';
 
         this.dashboardContent.innerHTML = `
             <div class="dashboard-grid">
-                <div class="card stat-card">
-                    <h3>Overall Progress</h3>
-                    <p class="stat-big-number">${overallProgress}%</p>
-                    <div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${overallProgress}%;"></div></div>
-                </div>
-                <div class="card stat-card">
-                    <h3>Completed Tasks</h3>
-                    <p class="stat-big-number">${completedTasksCount} / ${totalTasks}</p>
-                    <small>Total tasks completed</small>
-                </div>
-                <div class="card stat-card">
-                    <h3>Overdue Tasks</h3>
-                    <p class="stat-big-number">${overdueTasksCount}</p>
-                    <small>Tasks past their end date</small>
-                </div>
-                <div class="card">
-                    <h3>Due This Week</h3>
-                    <div class="dashboard-task-list">${thisWeekHtml}</div>
-                </div>
-                <div class="card">
-                    <h3>Development Status</h3>
-                    <div class="dashboard-status-list">${statusHtml}</div>
-                </div>
+                <div class="card stat-card"><h3>Overall Progress</h3><p class="stat-big-number">${overallProgress}%</p><div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${overallProgress}%;"></div></div></div>
+                <div class="card stat-card"><h3>Completed Tasks</h3><p class="stat-big-number">${completedTasksCount} / ${totalTasks}</p><small>Total tasks completed</small></div>
+                <div class="card stat-card"><h3>Overdue Tasks</h3><p class="stat-big-number">${overdueTasksCount}</p><small>Tasks past their end date</small></div>
+                <div class="card"><h3>Due This Week</h3><div class="dashboard-task-list">${thisWeekHtml}</div></div>
+                <div class="card"><h3>Development Status</h3><div class="dashboard-status-list">${statusHtml}</div></div>
+                <div class="card"><h3>Who's Online</h3><div class="online-user-list">${onlineUsersHtml}</div></div>
             </div>`;
     }
     // PINPOINT: ui.js -> UI class -> renderTeam method
@@ -267,46 +233,90 @@ class UI {
             <button type="submit" class="btn btn-primary">Save Member Profile</button>
         </form>`;
     }
+    
     renderTasks(tasks, team, currentUser) {
         const priorityOrder = { 'High': 1, 'Medium': 2, 'Low': 3 };
-
-        // Sort tasks by priority (High first), then by the soonest end date
+        const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
+    
         const sortedTasks = tasks.slice().sort((a, b) => {
             const priorityA = priorityOrder[a.priority] || 4;
             const priorityB = priorityOrder[b.priority] || 4;
-            if (priorityA !== priorityB) {
-                return priorityA - priorityB;
-            }
+            if (priorityA !== priorityB) return priorityA - priorityB;
             return new Date(a.endDate) - new Date(b.endDate);
         });
-
+    
         const pendingTasks = sortedTasks.filter(t => !t.completed);
         const finishedTasks = sortedTasks.filter(t => t.completed);
-
+    
         const createTaskHTML = (task) => {
             const assignee = team.find(m => m.id === task.assignedTo);
-            return `<div class="task-item card" data-id="${task.id}">
-                <input type="checkbox" class="task-item-checkbox" ${task.completed ? "checked" : ""}>
-                <div class="task-item-info">
-                    <span class="task-name ${task.completed ? "completed" : ""}">${task.name}</span>
-                    <div class="task-metadata">
-                        <span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span>
-                        <span>${assignee ? `👤 ${assignee.name}`: ""}</span>
-                        <span>${task.category ? `📁 ${task.category}` : ""}</span>
-                        <strong data-tooltip="Deadline">${this.formatDate(task.endDate, true)}</strong>
+            const isAssignee = currentUser.id === task.assignedTo;
+            let actionButtons = '';
+            let statusIndicator = '';
+            let progressBarHtml = '';
+    
+            if (task.completed) {
+                if(isPrivileged) {
+                    actionButtons += `<button class="btn btn-small btn-restore" data-action="restore">Restore</button>`;
+                }
+            } else {
+                if (isPrivileged && task.acknowledged && !task.pendingCompletion) {
+                    statusIndicator += `<span class="task-status-indicator ack" data-tooltip="Acknowledged">✔️</span>`;
+                }
+                if (task.pendingCompletion) {
+                    statusIndicator += `<span class="task-status-indicator pending" data-tooltip="Pending Approval">🕒</span>`;
+                }
+        
+                if (isAssignee && !task.acknowledged) {
+                    actionButtons += `<button class="btn btn-small btn-ack" data-action="acknowledge">Acknowledge</button>`;
+                }
+                if (isAssignee && task.acknowledged && !task.pendingCompletion) {
+                    actionButtons += `<button class="btn btn-small btn-done" data-action="mark-done">Mark as Done</button>`;
+                }
+                if (isPrivileged && task.pendingCompletion) {
+                    actionButtons += `<button class="btn btn-small btn-approve" data-action="approve">Approve</button>`;
+                }
+                if (isPrivileged && !task.pendingCompletion) {
+                    actionButtons += `<button class="btn btn-small btn-complete-shortcut" data-action="mark-complete">Mark as Complete</button>`;
+                }
+            }
+            
+            actionButtons += `<button class="btn btn-small btn-details" data-action="view-details">Details</button>`;
+    
+            const canEditProgress = isAssignee && task.acknowledged && !task.pendingCompletion && !task.completed;
+            
+            if (canEditProgress) {
+                progressBarHtml = `
+                    <div class="task-progress-container">
+                        <input type="range" min="0" max="100" value="${task.progress}" class="task-progress-slider" style="--progress-percent: ${task.progress}%;">
+                        <span class="task-progress-percentage">${task.progress}%</span>
                     </div>
+                `;
+            } else {
+                progressBarHtml = `<div class="task-progress-bar-container"><div class="task-progress-bar-fill" style="width: ${task.progress}%;"></div></div>`;
+            }
+
+            return `
+            <div class="task-item card" data-id="${task.id}">
+                <div class="task-item-main">
+                    <div class="task-item-info">
+                        <div class="task-name-wrapper"><span class="task-name ${task.completed ? "completed" : ""}">${statusIndicator}${task.name}</span></div>
+                        ${progressBarHtml}
+                        <div class="task-metadata">
+                            <span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span>
+                            <span>${assignee ? `👤 ${assignee.name}`: ""}</span>
+                            <span>${task.category ? `📁 ${task.category}` : ""}</span>
+                            <strong data-tooltip="Deadline">${this.formatDate(task.endDate, true)}</strong>
+                        </div>
+                    </div>
+                    <div class="task-item-actions">${actionButtons}</div>
                 </div>
                 ${this.createItemActionsHTML("Task", currentUser)}
             </div>`;
         };
-
-        this.taskListPending.innerHTML = pendingTasks.length > 0
-            ? pendingTasks.map(createTaskHTML).join('')
-            : '<div class="card"><p>No pending tasks.</p></div>';
-
-        this.taskListFinished.innerHTML = finishedTasks.length > 0
-            ? finishedTasks.map(createTaskHTML).join('')
-            : '<div class="card"><p>No finished tasks.</p></div>';
+    
+        this.taskListPending.innerHTML = pendingTasks.length > 0 ? pendingTasks.map(createTaskHTML).join('') : '<div class="card"><p>No pending tasks.</p></div>';
+        this.taskListFinished.innerHTML = finishedTasks.length > 0 ? finishedTasks.map(createTaskHTML).join('') : '<div class="card"><p>No finished tasks.</p></div>';
     }
     createTaskItemHTML(task,team){const assignee=team.find(m=>m.id===task.assignedTo);return`<div class="task-item card" data-id="${task.id}"><input type="checkbox" class="task-item-checkbox" ${task.completed?"checked":""} data-tooltip="Toggle completion"><div class="task-item-info"><span class="task-name ${task.completed?"completed":""}">${task.name}</span><div class="task-metadata"><span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span><span>${assignee?`👤 ${assignee.name}`:""}</span><span>${task.category?`📁 ${task.category}`:""}</span><strong data-tooltip="Deadline">${this.formatDate(task.endDate,!0)}</strong></div></div><div class="item-actions">${this.createItemActionsHTML("Task")}</div></div>`}
     renderMilestones(milestones, currentUser) {
@@ -397,7 +407,83 @@ class UI {
                 </table>
             </div>`;
     }
-    renderRisks(risks){let content;if(!risks||risks.length===0){content='<div class="card"><p>No risks documented.</p></div>'}else{content=`<div class="table-container card"><table class="styled-table"><thead><tr><th>Priority</th><th>Description</th><th>Impact</th><th>Actions</th></tr></thead><tbody>${risks.map(r=>`<tr><td class="priority-cell"><span class="priority-pill ${r.priority.toLowerCase()}">${r.priority}</span></td><td>${r.description}</td><td>${r.impact}</td><td><div class="item-actions" data-id="${r.id}">${this.createItemActionsHTML("Risk")}</div></td></tr>`).join("")}</tbody></table></div>`}this.riskTableContainer.innerHTML=content}
+    createTaskDetailModal(task, team, currentUser) {
+        const assignee = team.find(m => m.id === task.assignedTo);
+        const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
+        let statusText = "Pending Acknowledgement";
+        if (task.acknowledged) statusText = "Acknowledged / In Progress";
+        if (task.pendingCompletion) statusText = "Pending Approval";
+        if (task.completed) statusText = "Completed";
+
+        return `
+            <div class="task-detail-modal">
+                <div class="task-detail-section">
+                    <h4>Description</h4>
+                    <p>${task.description || 'No description provided.'}</p>
+                </div>
+                <div class="task-detail-section">
+                    <h4>Details</h4>
+                    <ul>
+                        <li><strong>Status:</strong> ${statusText}</li>
+                        <li><strong>Assignee:</strong> ${assignee ? assignee.name : 'Unassigned'}</li>
+                        <li><strong>Priority:</strong> <span class="priority-pill ${task.priority.toLowerCase()}">${task.priority}</span></li>
+                        <li><strong>Category:</strong> ${task.category || 'N/A'}</li>
+                        <li><strong>Start Date:</strong> ${this.formatDate(task.startDate, true)}</li>
+                        <li><strong>End Date:</strong> ${this.formatDate(task.endDate, true)}</li>
+                    </ul>
+                </div>
+                ${isPrivileged ? `
+                <div class="task-detail-section">
+                     <h4>Admin Info</h4>
+                     <ul>
+                        <li><strong>Acknowledged by Member:</strong> ${task.acknowledged ? 'Yes' : 'No'}</li>
+                     </ul>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    renderRisks(risks, currentUser) {
+        let content;
+        if (!risks || risks.length === 0) {
+            content = '<div class="card"><p>No risks documented.</p></div>';
+        } else {
+            // Sort risks by priority: High -> Medium -> Low
+            const sortedRisks = risks.slice().sort((a, b) => {
+                const priorityOrder = { 'High': 1, 'Medium': 2, 'Low': 3 };
+                return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+            });
+
+            content = `
+                <div class="table-container card">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>Priority</th>
+                                <th>Description</th>
+                                <th>Impact</th>
+                                <th style="width: 120px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sortedRisks.map(r => `
+                                <tr data-id="${r.id}">
+                                    <td class="priority-cell">
+                                        <span class="priority-pill ${r.priority.toLowerCase()}">${r.priority}</span>
+                                    </td>
+                                    <td>${r.description}</td>
+                                    <td>${r.impact}</td>
+                                    <td>
+                                        ${this.createItemActionsHTML("Risk", currentUser)}
+                                    </td>
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+        this.riskTableContainer.innerHTML = content;
+    }
     renderTeamMemberProfile(member,tasks){if(!member){this.teamMemberProfileContent.innerHTML="<p>Member not found.</p>";return}const completedTasks=tasks.filter(t=>t.completed);const onTime=completedTasks.filter(t=>{if(!t.endDate)return!0;const due=new Date(t.endDate);const completedAt=new Date;return due>=completedAt}).length;const performance=completedTasks.length>0?Math.round(onTime/completedTasks.length*100):100;let rating,ratingClass;performance>=90?(rating="Excellent",ratingClass="excellent"):performance>=70?(rating="Good",ratingClass="good"):(rating="Needs Improvement",ratingClass="needs-improvement");this.teamMemberProfileContent.innerHTML=`<header class="view-header"><button id="back-to-team-btn" class="btn">< Back to Team</button></header><div class="profile-header card"><div class="profile-avatar">${this.createAvatarHTML(member,"team-member-avatar")}</div><div class="profile-info"><h2>${member.name}</h2><p>${member.role}</p><p class="profile-rating ${ratingClass}">${rating} Performance (${performance}%)</p></div></div><h3>Assigned Tasks (${tasks.length})</h3><div class="table-container card"><table class="styled-table"><thead><tr><th>Status</th><th>Task</th><th>Priority</th><th>Deadline</th></tr></thead><tbody>${tasks.length>0?tasks.map(t=>`<tr><td>${t.completed?"✅":"⏳"}</td><td>${t.name}</td><td><span class="priority-pill ${t.priority.toLowerCase()}">${t.priority}</span></td><td>${this.formatDate(t.endDate,!0)}</td></tr>`).join(""):`<tr><td colspan="4" style="text-align:center">No tasks assigned.</td></tr>`}</tbody></table></div>`}
     createAvatarHTML(m,c,t=""){const tt=t?`data-tooltip="${t}"`:"";return m.avatar?`<img src="${m.avatar}" alt="${m.name}" class="${c}" ${tt}>`:`<div class="${c.replace("avatar","icon-fallback")}" ${tt}><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>`}
     createItemActionsHTML(type, currentUser) {

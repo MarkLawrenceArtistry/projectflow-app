@@ -52,18 +52,17 @@ class App {
     }
 
     // PINPOINT: app.js -> App class -> render method
+    // PINPOINT: In js/app.js, inside the App class, REPLACE the render method.
+
     render() {
         ui.showLoader();
         const currentUser = store.currentUser;
         if (!currentUser) { ui.hideLoader(); return; }
 
-        // --- ROLE-BASED UI CONTROL ---
         document.getElementById('current-user-info').textContent = `${currentUser.name} (${currentUser.role})`;
         document.getElementById('admin-nav-link').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         
         const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
-        document.getElementById('current-user-info').textContent = `${currentUser.name} (${currentUser.role})`;
-        document.getElementById('admin-nav-link').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         document.getElementById('projects-admin-nav-link').style.display = isPrivileged ? 'block' : 'none';
         document.querySelectorAll('.btn-primary').forEach(btn => { btn.style.display = isPrivileged ? 'inline-block' : 'none'; });
         document.getElementById('task-filter-member').style.display = isPrivileged ? 'inline-block' : 'none';
@@ -84,9 +83,8 @@ class App {
             tasks = project.tasks.filter(t => t.assignedTo === currentUser.id);
         }
 
-        // PINPOINT: app.js -> App class -> render method (REPLACE this entire object)
         const viewRenderers = {
-            dashboard: () => ui.renderDashboard(project),
+            dashboard: () => ui.renderDashboard(project, store.onlineUsers),
             team: () => ui.renderTeam(team, tasks, currentUser),
             tasks: () => {
                 ui.renderTaskFilters(team, tasks);
@@ -108,8 +106,6 @@ class App {
             settings: () => { /* Renders nothing, the view is static HTML */ },
             admin: () => ui.renderAdminView(store.getAllUsers(), currentUser),
             'projects-admin': () => ui.renderProjectsAdminView(store.projects, currentUser),
-            
-            // THE FIX IS HERE: We now correctly retrieve the specific member's data.
             'team-member-profile': () => {
                 const member = store.getMember(this.currentMemberId);
                 const memberTasks = project.tasks.filter(t => t.assignedTo === this.currentMemberId);
@@ -129,10 +125,16 @@ class App {
         document.getElementById('show-login').addEventListener('click', e => { e.preventDefault(); this.showLogin(true); });
     }
 
+    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
+
+    
+    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
+
+    // PINPOINT: In js/app.js, inside the App class, REPLACE the setupMainAppEventListeners method.
+
     setupMainAppEventListeners() {
         if (this.mainAppInitialized) return;
 
-        // --- GENERAL APP LISTENERS (Always present) ---
         document.getElementById('logout-btn').addEventListener('click', () => store.logout());
         document.querySelector('.sidebar-nav').addEventListener('click', e => {
             const link = e.target.closest('.nav-link');
@@ -150,28 +152,21 @@ class App {
         });
         ui.projectSelector.addEventListener('change', e => store.setActiveProject(e.target.value));
 
-        document.getElementById('main-content').addEventListener('click', e => {
+        const mainContent = document.getElementById('main-content');
+        
+        mainContent.addEventListener('click', e => {
             if (e.target.id === 'back-to-team-btn') {
                 this.currentView = 'team';
                 this.render();
                 return;
             }
-
-            // Admin View actions
             if (e.target.closest('#admin-view')) {
                 const item = e.target.closest('[data-id]');
                 if (!item) return;
-
                 const id = item.dataset.id;
-                if (e.target.closest('.edit-btn')) {
-                    this.handleUserForm(id);
-                }
-                if (e.target.closest('.delete-btn')) {
-                    this.handleUserDelete(id);
-                }
+                if (e.target.closest('.edit-btn')) this.handleUserForm(id);
+                if (e.target.closest('.delete-btn')) this.handleUserDelete(id);
             }
-
-            // Team View actions (including click on card to view profile)
             if (e.target.closest('#team-view')) {
                 const memberCard = e.target.closest('.team-member-card');
                 if (!memberCard) return;
@@ -181,19 +176,22 @@ class App {
                 else if (store.currentUser.role !== 'member') this.handleMemberClick(memberId);
                 return;
             }
-
-            // Tasks View actions
             if (e.target.closest('#tasks-view')) {
                 const taskItem = e.target.closest('.task-item');
                 if (!taskItem) return;
                 const taskId = taskItem.dataset.id;
-                if (e.target.closest('.edit-btn')) this.handleTaskForm(taskId);
+                const action = e.target.dataset.action;
+
+                if (action === 'view-details') this.handleTaskDetails(taskId);
+                else if (action === 'acknowledge') this.handleTaskAcknowledge(taskId);
+                else if (action === 'mark-done') store.requestTaskCompletion(taskId, true);
+                else if (action === 'approve') store.toggleTaskCompletion(taskId);
+                else if (action === 'mark-complete') store.toggleTaskCompletion(taskId);
+                else if (action === 'restore') store.restoreTask(taskId);
+                else if (e.target.closest('.edit-btn')) this.handleTaskForm(taskId);
                 else if (e.target.closest('.delete-btn')) this.handleTaskDelete(taskId);
-                else if (e.target.matches('.task-item-checkbox')) this.handleTaskToggle(taskId);
                 return;
             }
-
-            // Milestones, Status, Risks, Projects Admin...
             const views = ['milestones', 'status', 'risks', 'projects-admin'];
             for (const view of views) {
                 if (e.target.closest(`#${view}-view`)) {
@@ -213,13 +211,31 @@ class App {
             }
         });
 
-        // --- LISTENERS FOR STATIC ELEMENTS WITHIN VIEWS (like forms, tabs, etc.) ---
+         mainContent.addEventListener('input', e => {
+            if (e.target.matches('.task-progress-slider')) {
+                const wrapper = e.target.closest('.task-progress-container');
+                if (!wrapper) return;
+                
+                const percentageText = wrapper.querySelector('.task-progress-percentage');
+                const progressValue = e.target.value;
+
+                e.target.style.setProperty('--progress-percent', `${progressValue}%`);
+                if (percentageText) percentageText.textContent = `${progressValue}%`;
+            }
+        });
+
+        mainContent.addEventListener('change', e => {
+            if (e.target.matches('.task-progress-slider')) {
+                const taskId = e.target.closest('.task-item').dataset.id;
+                store.updateTaskProgress(taskId, e.target.value);
+            }
+        });
+
         const setupListener = (id, event, handler) => {
             const el = document.getElementById(id);
             if (el) el.addEventListener(event, handler);
         };
         
-        // "Add" buttons
         setupListener('add-user-btn', 'click', () => this.handleUserForm());
         setupListener('add-member-to-project-btn', 'click', () => this.handleMemberProfileForm());
         setupListener('add-task-btn', 'click', () => this.handleTaskForm());
@@ -233,13 +249,11 @@ class App {
         setupListener('task-filter-priority', 'change', () => this.render());
         setupListener('task-filter-category', 'change', () => this.render());
         
-        // Settings form
         setupListener('change-password-form', 'submit', e => {
             e.preventDefault();
             this.handleChangePassword();
         });
 
-        // Task Tabs
         const taskTabs = document.querySelector('#tasks-view .tabs');
         if (taskTabs) {
             taskTabs.addEventListener('click', e => {
@@ -253,7 +267,6 @@ class App {
             });
         }
         
-        // Modal
         setupListener('modal-container', 'click', e => {
             if (e.target.id === 'modal-close-btn' || e.target.classList.contains('modal-backdrop')) {
                 ui.closeModal();
@@ -262,11 +275,25 @@ class App {
 
         this.mainAppInitialized = true;
     }
-        // PINPOINT: app.js -> App class (add this new method)
+    
+    // PINPOINT: app.js -> App class (add this new method)
     handleMemberClick(memberId) {
         this.currentView = 'team-member-profile';
         this.currentMemberId = memberId;
         this.render();
+    }
+
+    handleTaskDetails(id) {
+        const task = store.getTask(id);
+        const team = store.getProjectTeamMembers();
+        const currentUser = store.currentUser;
+        if (task) {
+            ui.openModal(`Task: ${task.name}`, ui.createTaskDetailModal(task, team, currentUser));
+        }
+    }
+
+    handleTaskAcknowledge(id) {
+        store.acknowledgeTask(id);
     }
 
     handleProjectForm(id) {
@@ -366,7 +393,7 @@ class App {
     handleMemberFromProjectDelete(id) { const member = store.getMember(id); if (member && confirm(`Remove ${member.name} from this project?`)) { store.removeMemberFromProject(id); } }
     handleTaskForm(id){const i=!!id,t=i?store.getTask(id):void 0;const team=store.getProjectTeamMembers();ui.openModal(i?'Edit Task':'Add Task',ui.createTaskForm(team,t)),document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const s={name:document.getElementById('name').value,description:document.getElementById('desc').value,assignedTo:document.getElementById('assign').value,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value,category:document.getElementById('cat').value.trim(),priority:document.getElementById('priority').value};i?store.updateTask(id,s):store.addTask(s),ui.closeModal()});}
     handleTaskDelete(id) { const t = store.getTask(id); if (t && confirm(`Delete task "${t.name}"?`)) { store.deleteTask(id); } }
-    handleTaskToggle(id){store.toggleTaskCompletion(id);}
+    
     handleMilestoneForm(id){const i=!!id,t=i?store.getMilestone(id):void 0;ui.openModal(i?'Edit Milestone':'Add Milestone',ui.createMilestoneForm(t)),document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const s={name:document.getElementById('name').value,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value};i?store.updateMilestone(id,s):store.addMilestone(s),ui.closeModal()});}
     handleMilestoneDelete(id) { const t = store.getMilestone(id); if (t && confirm(`Delete milestone "${t.name}"?`)) { store.deleteMilestone(id); } }
     handleStatusForm(id) {
@@ -404,6 +431,8 @@ class App {
     handleRiskForm(id){const i=!!id,r=i?store.getRisk(id):undefined;ui.openModal(i?'Edit Risk':'Add Risk',ui.createRiskForm(r));document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const d={description:document.getElementById('desc').value,impact:document.getElementById('impact').value,priority:document.getElementById('priority').value};if(i)store.updateRisk(id,d);else store.addRisk(d);ui.closeModal();});}
     handleRiskDelete(id) { if (confirm('Delete this risk?')) { store.deleteRisk(id); } }
 }
+
+
 function updateOnlineStatus() {
     if (navigator.onLine) {
         document.body.classList.remove('offline');

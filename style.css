@@ -250,3 +250,205 @@ h1,h2,h3{font-weight:600;line-height:1.3}h1{font-size:2rem}h2{font-size:1.5rem}h
 body.offline #offline-banner {
     bottom: 0; /* Slide in when offline */
 }
+
+textarea {
+    font-family: 'Inter',sans-serif;
+    color: #404142;
+}
+
+/* PINPOINT: Add this CSS to the end of your style.css file */
+
+.task-item {
+    align-items: flex-start; /* Align checkbox to the top */
+}
+
+.task-item-main {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 12px;
+}
+
+.task-item-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.task-status-indicator {
+    margin-right: 8px;
+    font-size: 0.9em;
+}
+
+.btn.btn-small.btn-ack {
+    background-color: #27ae60;
+    color: white;
+}
+.btn.btn-small.btn-ack:hover {
+    background-color: #2ecc71;
+}
+
+.btn.btn-small.btn-details {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+.btn.btn-small.btn-details:hover {
+    background-color: var(--border-color);
+}
+
+/* Task Detail Modal Styles */
+.task-detail-section {
+    margin-bottom: 20px;
+}
+.task-detail-section:last-child {
+    margin-bottom: 0;
+}
+.task-detail-section h4 {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+.task-detail-section p {
+    line-height: 1.7;
+    white-space: pre-wrap; /* Respect line breaks in description */
+}
+.task-detail-section ul {
+    list-style: none;
+    padding: 0;
+}
+.task-detail-section ul li {
+    padding: 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* PINPOINT: Add this CSS to the end of your style.css file */
+
+.task-name-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.task-status-indicator {
+    margin-right: 8px;
+    font-size: 0.9em;
+    display: inline-flex;
+    align-items: center;
+}
+.task-status-indicator.pending {
+    color: var(--priority-medium);
+}
+.task-status-indicator.ack {
+    color: #27ae60;
+}
+/* PINPOINT: Add this CSS to the end of your style.css file */
+
+/* Who's Online Widget */
+.online-user-list {
+    margin-top: 16px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+.online-user-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.online-user-item:last-child {
+    border-bottom: none;
+}
+.online-indicator {
+    width: 10px;
+    height: 10px;
+    background-color: #2ecc71;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.online-user-role {
+    margin-left: auto;
+    font-size: 0.8em;
+    color: var(--text-light);
+    background-color: var(--bg-color);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+.dashboard-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+
+/* PINPOINT: Add this CSS to the end of your style.css file */
+
+.btn.btn-small.btn-done {
+    background-color: var(--priority-low);
+    color: white;
+}
+.btn.btn-small.btn-approve {
+    background-color: #27ae60;
+    color: white;
+}
+/* PINPOINT: In style.css, REMOVE all the old .task-progress-slider CSS rules and REPLACE them with this entire block. */
+.btn.btn-small.btn-restore {
+    background-color: var(--text-light);
+    color: white;
+}
+
+.task-progress-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 8px 0;
+}
+.task-progress-percentage {
+    font-size: 0.9em;
+    color: var(--text-light);
+    font-weight: 500;
+    flex-shrink: 0;
+    min-width: 40px;
+    text-align: right;
+}
+
+/* --- The New Slider --- */
+.task-progress-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: linear-gradient(to right, var(--accent-color) var(--progress-percent), #e9ecef var(--progress-percent));
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+/* Slider Thumb (The Draggable Circle) */
+.task-progress-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 18px;
+    width: 18px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    margin-top: -6px; /* Center thumb on the track */
+}
+
+.task-progress-slider::-moz-range-thumb {
+    height: 12px;
+    width: 12px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+/* PINPOINT: Add this CSS to the end of your style.css file */
+
+.btn.btn-small.btn-complete-shortcut {
+    background-color: #27ae60;
+    color: white;
+}

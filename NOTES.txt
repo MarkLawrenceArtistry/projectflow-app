@@ -228,6 +228,10 @@ class App {
         setupListener('add-risk-btn', 'click', () => this.handleRiskForm());
         setupListener('add-gantt-phase-btn', 'click', () => this.handleGanttPhaseForm());
         setupListener('add-project-admin-btn', 'click', () => this.handleProjectForm());
+
+        setupListener('task-filter-member', 'change', () => this.render());
+        setupListener('task-filter-priority', 'change', () => this.render());
+        setupListener('task-filter-category', 'change', () => this.render());
         
         // Settings form
         setupListener('change-password-form', 'submit', e => {
@@ -400,131 +404,19 @@ class App {
     handleRiskForm(id){const i=!!id,r=i?store.getRisk(id):undefined;ui.openModal(i?'Edit Risk':'Add Risk',ui.createRiskForm(r));document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const d={description:document.getElementById('desc').value,impact:document.getElementById('impact').value,priority:document.getElementById('priority').value};if(i)store.updateRisk(id,d);else store.addRisk(d);ui.closeModal();});}
     handleRiskDelete(id) { if (confirm('Delete this risk?')) { store.deleteRisk(id); } }
 }
-
+function updateOnlineStatus() {
+    if (navigator.onLine) {
+        document.body.classList.remove('offline');
+    } else {
+        document.body.classList.add('offline');
+    }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
 // --- App Initialization ---
 const app = new App();
 store.init(db, app);
-
-import { store } from './store.js';
-
-const MS_IN_DAY = 1000 * 60 * 60 * 24;
-
-class Gantt {
-    constructor(containerId) {
-        this.container = document.getElementById(containerId);
-        this.zoomLevel = 'day';
-        this.activePhaseId = null;
-        this.project = null;
-    }
-
-    render(project) {
-        this.project = project;
-        this.container.innerHTML = `
-            <div class="gantt-body">
-                <div class="gantt-zoom-controls">
-                    <button class="btn" data-zoom="day">Day</button>
-                    <button class="btn" data-zoom="week">Week</button>
-                    <button class="btn" data-zoom="month">Month</button>
-                </div>
-                <div class="gantt-timeline-wrapper">
-                    <div id="gantt-grid-container"></div>
-                </div>
-            </div>
-            <div id="gantt-edit-form-container" class="gantt-edit-form-container"></div>
-        `;
-        this.gridContainer = this.container.querySelector('#gantt-grid-container');
-        this.formContainer = this.container.querySelector('#gantt-edit-form-container');
-        this.addEventListeners();
-        this.drawChart();
-    }
-    
-    addEventListeners() {
-        this.container.querySelector('.gantt-zoom-controls').addEventListener('click', e => {
-            const zoomBtn = e.target.closest('button[data-zoom]');
-            if (zoomBtn) { this.zoomLevel = zoomBtn.dataset.zoom; this.drawChart(); }
-        });
-        this.gridContainer.addEventListener('click', e => {
-            const bar = e.target.closest('.gantt-phase-bar');
-            const deleteBtn = e.target.closest('.gantt-delete-btn');
-            if (deleteBtn) {
-                e.stopPropagation();
-                if(confirm('Delete this phase?')) { store.deleteGanttPhase(deleteBtn.dataset.id); this.formContainer.classList.remove('visible'); this.drawChart(); }
-            } else if (bar) { this.showEditForm(bar.dataset.id); }
-        });
-    }
-
-    drawChart() {
-        this.gridContainer.innerHTML = '';
-        this.container.querySelectorAll('.gantt-zoom-controls button').forEach(b => b.classList.remove('active'));
-        this.container.querySelector(`button[data-zoom="${this.zoomLevel}"]`).classList.add('active');
-        
-        const { ganttPhases } = this.project;
-        if (!ganttPhases || ganttPhases.length === 0) { this.gridContainer.innerHTML = `<p style="padding: 20px;">No phases created for this project.</p>`; return; }
-
-        const dates = ganttPhases.flatMap(p => [new Date(p.startDate), new Date(p.endDate)]);
-        const minDate = new Date(Math.min.apply(null, dates));
-        const maxDate = new Date(Math.max.apply(null, dates));
-
-        const headerInfo = this.getTimelineHeaderInfo(minDate, maxDate);
-        if (!headerInfo) return;
-        const chartWidth = headerInfo.labels.length * headerInfo.unitWidth;
-
-        const header = this.createTimelineHeader(headerInfo, chartWidth);
-        const grid = this.createGrid(ganttPhases, headerInfo, chartWidth);
-        
-        this.gridContainer.append(header, grid);
-        if (this.activePhaseId) this.highlightActiveBar();
-    }
-    
-    getTimelineHeaderInfo(minDate, maxDate) {
-        let labels = [], unitWidth = 0;
-        const tempDate = new Date(minDate);
-        if(isNaN(tempDate.getTime())) return null;
-
-        switch(this.zoomLevel) {
-            case 'week':
-                unitWidth = 70; tempDate.setDate(tempDate.getDate() - tempDate.getDay());
-                while (tempDate <= maxDate) { labels.push({ start: new Date(tempDate), label: `${tempDate.getDate()} ${tempDate.toLocaleString('default',{month:'short'})}` }); tempDate.setDate(tempDate.getDate() + 7); }
-                break;
-            case 'month':
-                unitWidth = 150; tempDate.setDate(1);
-                while (tempDate <= maxDate) { labels.push({ start: new Date(tempDate), label: tempDate.toLocaleString('default',{month:'long', year:'numeric'})}); tempDate.setMonth(tempDate.getMonth() + 1); }
-                break;
-            default:
-                unitWidth = 40;
-                while (tempDate <= maxDate) { labels.push({ start: new Date(tempDate), label: `${tempDate.getDate()}${tempDate.toLocaleString('default',{month:'short'})}` }); tempDate.setDate(tempDate.getDate() + 1); }
-        }
-        return { labels, unitWidth, startDate: labels[0].start };
-    }
-    
-    createTimelineHeader({ labels, unitWidth }, chartWidth) { const h = document.createElement('div'); h.className = 'gantt-timeline-header'; h.style.width = `${chartWidth}px`; labels.forEach(l => { const u = document.createElement('div'); u.className = 'gantt-timeline-unit'; u.style.width = `${unitWidth}px`; u.textContent = l.label; h.appendChild(u); }); return h; }
-    
-    createGrid(phases, { unitWidth, startDate }, chartWidth) {
-        const grid = document.createElement('div'); grid.className = 'gantt-grid'; grid.style.width = `${chartWidth}px`; grid.style.height = `${(phases.length * 50) + 20}px`; grid.style.backgroundSize = `${unitWidth}px 100%`;
-        phases.forEach((phase, index) => {
-            const phaseStart = new Date(phase.startDate), phaseEnd = new Date(phase.endDate);
-            const offsetDays = (phaseStart - startDate) / MS_IN_DAY, durationDays = (phaseEnd - phaseStart) / MS_IN_DAY + 1;
-            const daysPerUnit = this.zoomLevel==='week'?7:this.zoomLevel==='month'?30.44:1;
-            const left = (offsetDays/daysPerUnit)*unitWidth, width = (durationDays/daysPerUnit)*unitWidth-2;
-            const bar = document.createElement('div'); bar.className='gantt-phase-bar'; bar.dataset.id=phase.id; bar.style.cssText=`top:${index*50+10}px;left:${left}px;width:${width}px;background-color:${phase.color};`; bar.innerHTML=`<span class="gantt-phase-name">${phase.name}</span><button class="gantt-delete-btn" data-id="${phase.id}">×</button>`; grid.appendChild(bar);
-        });
-        return grid;
-    }
-
-    showEditForm(phaseId) {
-        this.activePhaseId = this.activePhaseId === phaseId ? null : phaseId;
-        this.highlightActiveBar();
-        if (!this.activePhaseId) { this.formContainer.classList.remove('visible'); return; }
-        const phase = store.getGanttPhase(phaseId); if (!phase) return;
-        this.formContainer.innerHTML = `<form id="gantt-edit-form" class="card"><h3>Edit Phase</h3><div class="form-group"><label for="gantt-name">Name</label><input type="text" id="gantt-name" class="form-input" value="${phase.name}" required></div><div style="display:flex;gap:16px;align-items:center;"><div class="form-group" style="flex:1"><label for="gantt-start">Start Date</label><input type="date" id="gantt-start" class="form-input" value="${phase.startDate}" required></div><div class="form-group" style="flex:1"><label for="gantt-end">End Date</label><input type="date" id="gantt-end" class="form-input" value="${phase.endDate}" required></div><div class="form-group"><label for="gantt-color">Color</label><input type="color" id="gantt-color" value="${phase.color}"></div></div><button type="submit" class="btn btn-primary">Save Changes</button></form>`;
-        this.formContainer.classList.add('visible');
-        document.getElementById('gantt-edit-form').addEventListener('submit', e => { e.preventDefault(); const d = { name: document.getElementById('gantt-name').value, startDate: document.getElementById('gantt-start').value, endDate: document.getElementById('gantt-end').value, color: document.getElementById('gantt-color').value, }; store.updateGanttPhase(phaseId, d); this.drawChart(); });
-    }
-
-    highlightActiveBar() { this.gridContainer.querySelectorAll('.gantt-phase-bar').forEach(b => b.classList.remove('active')); if(this.activePhaseId){const a=this.gridContainer.querySelector(`.gantt-phase-bar[data-id="${this.activePhaseId}"]`);if(a)a.classList.add('active');}}
-    async print(){const e=this.container;if(!e||!window.html2canvas)return;try{const t=await html2canvas(e,{backgroundColor:null});const n=document.createElement("a");n.download="gantt-chart.png",n.href=t.toDataURL("image/png"),n.click()}catch(e){console.error(e)}}
-}
-export const gantt = new Gantt('gantt-chart-container');
 
 class Task { constructor(id, name, description, assignedTo, startDate, endDate, category, priority, completed = false) { this.id = id; this.name = name; this.description = description; this.assignedTo = assignedTo; this.startDate = startDate; this.endDate = endDate; this.category = category; this.priority = priority; this.completed = completed; } }
 class TeamMember { constructor(id, name, role, avatar) { this.id = id; this.name = name; this.role = role; this.avatar = avatar; } }
@@ -640,11 +532,11 @@ class Store {
 
     initFirebaseListeners() {
         this.db.ref('/').on('value', (snapshot) => {
-            const data = snapshot.val();
-            
+            const data = snapshot.val() || {}; // Ensure data is an object
+
             this.users = data.users ? Object.values(data.users) : [];
-            
-            if (data && data.projects) {
+
+            if (data.projects) {
                 this.projects = Object.values(data.projects).map(pData => {
                     const project = new Project(pData.id, pData.name);
                     project.team = pData.team || {};
@@ -655,19 +547,28 @@ class Store {
                     project.risks = pData.risks ? Object.values(pData.risks) : [];
                     return project;
                 });
-                this.activeProjectId = data.activeProjectId;
+                // Get the active project ID from the database.
+                this.activeProjectId = data.activeProjectId || null;
             } else {
                 this.projects = [];
                 this.activeProjectId = null;
             }
 
-            if (!this.getActiveProject() && this.getVisibleProjects().length > 0) {
-                 this.setActiveProject(this.getVisibleProjects()[0].id);
-            } else if (this.getVisibleProjects().length === 0 && this.currentUser.role !== 'member') {
-                 this.addProject("My First Project");
-                 return;
+            // --- REVISED LOGIC TO PREVENT RESETTING THE PROJECT ---
+            const visibleProjects = this.getVisibleProjects();
+            const activeProjectIsVisible = this.activeProjectId && visibleProjects.some(p => p.id === this.activeProjectId);
+
+            if (!activeProjectIsVisible && visibleProjects.length > 0) {
+                // The active project is invalid or not set, but other projects are available.
+                // Default to the first one. This will trigger the listener again.
+                this.setActiveProject(visibleProjects[0].id);
+                return; // Exit to wait for the listener to re-run with the correct project.
+            } else if (visibleProjects.length === 0 && this.currentUser.role !== 'member') {
+                // No projects exist for this privileged user. Create a default one.
+                this.addProject("My First Project");
+                return; // Exit to wait for the listener to re-run.
             }
-            
+
             if (!this.dataLoaded) {
                 this.dataLoaded = true;
                 this.app.initMainApp();
@@ -824,7 +725,94 @@ class UI {
         }
     }
     clearAllDataViews(){[this.dashboardContent,this.teamGrid,this.taskListPending,this.taskListFinished,this.milestoneList,this.statusList,this.riskTableContainer].forEach(el=>el.innerHTML="")}
-    renderDashboard(p){if(!p||p.tasks.length===0){this.dashboardContent.innerHTML='<div class="card"><p>No data to display. Add some tasks to get started.</p></div>';return}const t=p.tasks.length,o=p.tasks.filter(t=>t.completed).length,e=t>0?Math.round(o/t*100):0,s=p.tasks.filter(t=>!t.completed&&t.endDate&&new Date(t.endDate)<new Date()).length;this.dashboardContent.innerHTML=`<div class="dashboard-grid"><div class="card stat-card"><h3>Overall Progress</h3><p class="stat-big-number">${e}%</p><div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${e}%;"></div></div></div><div class="card stat-card"><h3>Completed Tasks</h3><p class="stat-big-number">${o} / ${t}</p><small>Total tasks completed</small></div><div class="card stat-card"><h3>Overdue Tasks</h3><p class="stat-big-number">${s}</p><small>Tasks past their end date</small></div></div>`}
+    renderDashboard(p){
+        if (!p) {
+            this.dashboardContent.innerHTML = '<div class="card"><p>Select a project to view its dashboard.</p></div>';
+            return;
+        }
+
+        const tasks = p.tasks || [];
+        const statusItems = p.statusItems || [];
+        const totalTasks = tasks.length;
+        const completedTasksCount = tasks.filter(t => t.completed).length;
+        const overallProgress = totalTasks > 0 ? Math.round(completedTasksCount / totalTasks * 100) : 0;
+        const overdueTasksCount = tasks.filter(t => !t.completed && t.endDate && new Date(t.endDate) < new Date()).length;
+
+        // --- Helper function to check if a date is in the current week (Sun-Sat) ---
+        const isDateInThisWeek = (dateStr) => {
+            if (!dateStr) return false;
+            const taskDate = new Date(dateStr);
+            const today = new Date();
+            const dayOfWeek = today.getDay(); // Sunday = 0, Saturday = 6
+            const startOfWeek = new Date(today.setDate(today.getDate() - dayOfWeek));
+            startOfWeek.setHours(0, 0, 0, 0);
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(endOfWeek.getDate() + 6);
+            endOfWeek.setHours(23, 59, 59, 999);
+            return taskDate >= startOfWeek && taskDate <= endOfWeek;
+        };
+
+        const tasksThisWeek = tasks
+            .filter(task => !task.completed && isDateInThisWeek(task.endDate))
+            .sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+
+        let thisWeekHtml = '';
+        if (tasksThisWeek.length > 0) {
+            thisWeekHtml = tasksThisWeek.map(task => {
+                const deadline = this.formatDate(task.endDate, true);
+                return `<div class="dashboard-task-item">
+                            <span>${task.name}</span>
+                            <span class="task-due-date">${deadline}</span>
+                        </div>`;
+            }).join('');
+        } else {
+            thisWeekHtml = '<p class="empty-state">No tasks due this week. Great job!</p>';
+        }
+
+        let statusHtml = '';
+        if (statusItems.length > 0) {
+            statusHtml = statusItems.map(item => `
+                <div class="dashboard-status-item">
+                    <div class="dashboard-status-info">
+                        <span>${item.name}</span>
+                        <span style="color: ${item.color}; font-weight: 600;">${item.progress}%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width: ${item.progress}%; background-color: ${item.color};"></div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            statusHtml = '<p class="empty-state">No development statuses defined.</p>';
+        }
+
+        this.dashboardContent.innerHTML = `
+            <div class="dashboard-grid">
+                <div class="card stat-card">
+                    <h3>Overall Progress</h3>
+                    <p class="stat-big-number">${overallProgress}%</p>
+                    <div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${overallProgress}%;"></div></div>
+                </div>
+                <div class="card stat-card">
+                    <h3>Completed Tasks</h3>
+                    <p class="stat-big-number">${completedTasksCount} / ${totalTasks}</p>
+                    <small>Total tasks completed</small>
+                </div>
+                <div class="card stat-card">
+                    <h3>Overdue Tasks</h3>
+                    <p class="stat-big-number">${overdueTasksCount}</p>
+                    <small>Tasks past their end date</small>
+                </div>
+                <div class="card">
+                    <h3>Due This Week</h3>
+                    <div class="dashboard-task-list">${thisWeekHtml}</div>
+                </div>
+                <div class="card">
+                    <h3>Development Status</h3>
+                    <div class="dashboard-status-list">${statusHtml}</div>
+                </div>
+            </div>`;
+    }
     // PINPOINT: ui.js -> UI class -> renderTeam method
     renderTeam(team, tasks, currentUser) {
         if (!currentUser) return;
@@ -984,9 +972,20 @@ class UI {
         </form>`;
     }
     renderTasks(tasks, team, currentUser) {
-        // Correctly separate tasks into pending and finished lists
-        const pendingTasks = tasks.filter(t => !t.completed);
-        const finishedTasks = tasks.filter(t => t.completed);
+        const priorityOrder = { 'High': 1, 'Medium': 2, 'Low': 3 };
+
+        // Sort tasks by priority (High first), then by the soonest end date
+        const sortedTasks = tasks.slice().sort((a, b) => {
+            const priorityA = priorityOrder[a.priority] || 4;
+            const priorityB = priorityOrder[b.priority] || 4;
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            return new Date(a.endDate) - new Date(b.endDate);
+        });
+
+        const pendingTasks = sortedTasks.filter(t => !t.completed);
+        const finishedTasks = sortedTasks.filter(t => t.completed);
 
         const createTaskHTML = (task) => {
             const assignee = team.find(m => m.id === task.assignedTo);
@@ -1171,6 +1170,9 @@ export const ui=new UI;
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div id="offline-banner">
+        <span>You are currently offline. Some features may not be available.</span>
+    </div>
     <!-- Auth View (Login/Register) -->
     <div id="auth-view" style="display: none;">
         <div class="auth-container">
@@ -1514,4 +1516,69 @@ h1,h2,h3{font-weight:600;line-height:1.3}h1{font-size:2rem}h2{font-size:1.5rem}h
     justify-content: center;
     background-color: var(--bg-color);
     border-radius: 50%;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+}
+.stat-card { text-align: center; }
+.stat-big-number { font-size: 3rem; font-weight: 700; color: var(--accent-color); margin: 8px 0; }
+.progress-bar-container { height: 8px; width: 100%; background-color: var(--bg-color); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.progress-bar-fill { height: 100%; background-color: var(--accent-color); transition: width .3s ease; }
+.empty-state { color: var(--text-light); padding-top: 16px; text-align: center; }
+
+.dashboard-task-list {
+    margin-top: 16px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+.dashboard-task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.9em;
+}
+.dashboard-task-item:last-child { border-bottom: none; }
+.task-due-date { color: var(--text-light); flex-shrink: 0; margin-left: 16px; }
+
+.dashboard-status-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.dashboard-status-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9em;
+}
+
+@media (max-width: 992px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+#offline-banner {
+    position: fixed;
+    bottom: -100px; /* Start hidden below the screen */
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 12px 24px;
+    border-radius: 8px 8px 0 0;
+    z-index: 9999;
+    font-weight: 500;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+    transition: bottom 0.5s ease-in-out;
+}
+
+body.offline #offline-banner {
+    bottom: 0; /* Slide in when offline */
 }

@@ -1,4 +1,26 @@
-class Task { constructor(id, name, description, assignedTo, startDate, endDate, category, priority, completed = false) { this.id = id; this.name = name; this.description = description; this.assignedTo = assignedTo; this.startDate = startDate; this.endDate = endDate; this.category = category; this.priority = priority; this.completed = completed; } }
+
+
+
+// PINPOINT: In js/app.js, at the bottom, REPLACE the existing Task class with this one.
+
+// PINPOINT: In js/app.js, at the bottom, REPLACE the existing Task class with this one.
+
+class Task { 
+    constructor(id, name, description, assignedTo, startDate, endDate, category, priority, completed = false, acknowledged = false, progress = 0, pendingCompletion = false) { 
+        this.id = id; 
+        this.name = name; 
+        this.description = description; 
+        this.assignedTo = assignedTo; 
+        this.startDate = startDate; 
+        this.endDate = endDate; 
+        this.category = category; 
+        this.priority = priority; 
+        this.completed = completed; 
+        this.acknowledged = acknowledged;
+        this.progress = progress;
+        this.pendingCompletion = pendingCompletion;
+    } 
+}
 class TeamMember { constructor(id, name, role, avatar) { this.id = id; this.name = name; this.role = role; this.avatar = avatar; } }
 class Milestone { constructor(id, name, startDate, endDate) { this.id = id; this.name = name; this.startDate = startDate; this.endDate = endDate; } }
 class StatusItem { constructor(id, name, progress, color) { this.id = id; this.name = name; this.progress = progress; this.color = color; } }
@@ -6,7 +28,6 @@ class GanttPhase { constructor(id, name, startDate, endDate, color) { this.id = 
 class Risk { constructor(id, description, impact, priority) { this.id = id; this.description = description; this.impact = impact; this.priority = priority; } }
 class Project { constructor(id, name) { this.id = id; this.name = name; this.tasks = []; this.team = {}; this.milestones = []; this.statusItems = []; this.ganttPhases = []; this.risks = []; } }
 class User { constructor(id, name, email, password, role = 'member') { this.id = id; this.name = name; this.email = email; this.password = password; this.role = role; }}
-
 class Store {
     constructor() {
         this.db = null;
@@ -14,6 +35,7 @@ class Store {
         
         this.users = [];
         this.currentUser = null;
+        this.onlineUsers = []; // Add this line
         
         this.projects = [];
         this.activeProjectId = null;
@@ -27,8 +49,28 @@ class Store {
         // First, check for a logged-in user in the session
         this.checkSession();
     }
+
+    updateTaskProgress(id, progress) {
+        if (!this.activeProjectId || !id) return;
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/progress`).set(Number(progress));
+    }
+
+    requestTaskCompletion(id, isPending) {
+        if (!this.activeProjectId || !id) return;
+        const updates = {
+            pendingCompletion: isPending,
+            progress: 100
+        };
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
+    }
+    acknowledgeTask(id) {
+        if (!this.activeProjectId || !id) return;
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/acknowledged`).set(true);
+    }
     
     // --- AUTHENTICATION AND SESSION ---
+
+    // PINPOINT: In js/store.js, inside the Store class, REPLACE the checkSession method.
 
     checkSession() {
         const userId = sessionStorage.getItem('projectflow_userId');
@@ -36,9 +78,11 @@ class Store {
             this.db.ref(`/users/${userId}`).once('value', (snapshot) => {
                 this.currentUser = snapshot.val();
                 if (this.currentUser) {
-                    // THE FIX IS HERE: First, make the main app visible.
+                    const userStatusRef = this.db.ref(`/presence/${this.currentUser.id}`);
+                    userStatusRef.set({ name: this.currentUser.name, role: this.currentUser.role });
+                    userStatusRef.onDisconnect().remove();
+                    
                     this.app.showMainApp();
-                    // THEN, start listening for data, which will trigger the first render.
                     this.initFirebaseListeners();
                 } else {
                     this.logout();
@@ -55,9 +99,14 @@ class Store {
                 const userId = Object.keys(snapshot.val())[0];
                 const user = snapshot.val()[userId];
 
-                if (user.password === password) { // WARNING: Insecure password check
+                if (user.password === password) { 
                     this.currentUser = user;
                     sessionStorage.setItem('projectflow_userId', user.id);
+
+                    const userStatusRef = this.db.ref(`/presence/${user.id}`);
+                    userStatusRef.set({ name: user.name, role: user.role });
+                    userStatusRef.onDisconnect().remove();
+
                     this.app.showMainApp();
                     this.initFirebaseListeners();
                 } else {
@@ -85,11 +134,14 @@ class Store {
     }
     
     logout() {
+        if (this.currentUser) {
+            this.db.ref(`/presence/${this.currentUser.id}`).remove();
+        }
         sessionStorage.removeItem('projectflow_userId');
         this.currentUser = null;
-        // This will reload the page and the checkSession() will redirect to login
         window.location.reload();
     }
+
     // PINPOINT: store.js -> Store class (add this new method)
     changePassword(newPassword) {
         if (!this.currentUser) return;
@@ -109,10 +161,17 @@ class Store {
         // 'data' will be an object like { name: "New Project Name" }
         this.db.ref(`projects/${id}`).update(data);
     }
-
+    
     initFirebaseListeners() {
+        this.db.ref('/presence').on('value', (snapshot) => {
+            this.onlineUsers = snapshot.val() ? Object.values(snapshot.val()) : [];
+            if (this.dataLoaded) {
+                this.app.render();
+            }
+        });
+
         this.db.ref('/').on('value', (snapshot) => {
-            const data = snapshot.val() || {}; // Ensure data is an object
+            const data = snapshot.val() || {};
 
             this.users = data.users ? Object.values(data.users) : [];
 
@@ -120,33 +179,43 @@ class Store {
                 this.projects = Object.values(data.projects).map(pData => {
                     const project = new Project(pData.id, pData.name);
                     project.team = pData.team || {};
-                    project.tasks = pData.tasks ? Object.values(pData.tasks) : [];
+                    
+                    if (pData.tasks) {
+                        project.tasks = Object.values(pData.tasks).map(tData => {
+                            return new Task(
+                                tData.id, tData.name, tData.description, 
+                                tData.assignedTo, tData.startDate, tData.endDate, 
+                                tData.category, tData.priority, tData.completed || false, 
+                                tData.acknowledged || false, tData.progress || 0,
+                                tData.pendingCompletion || false
+                            );
+                        });
+                    } else {
+                        project.tasks = [];
+                    }
+
                     project.milestones = pData.milestones ? Object.values(pData.milestones) : [];
                     project.statusItems = pData.statusItems ? Object.values(pData.statusItems) : [];
                     project.ganttPhases = pData.ganttPhases ? Object.values(pData.ganttPhases) : [];
                     project.risks = pData.risks ? Object.values(pData.risks) : [];
                     return project;
                 });
-                // Get the active project ID from the database.
-                this.activeProjectId = data.activeProjectId || null;
+                
+                this.activeProjectId = sessionStorage.getItem('projectflow_activeProjectId') || null;
             } else {
                 this.projects = [];
                 this.activeProjectId = null;
             }
 
-            // --- REVISED LOGIC TO PREVENT RESETTING THE PROJECT ---
             const visibleProjects = this.getVisibleProjects();
             const activeProjectIsVisible = this.activeProjectId && visibleProjects.some(p => p.id === this.activeProjectId);
 
             if (!activeProjectIsVisible && visibleProjects.length > 0) {
-                // The active project is invalid or not set, but other projects are available.
-                // Default to the first one. This will trigger the listener again.
                 this.setActiveProject(visibleProjects[0].id);
-                return; // Exit to wait for the listener to re-run with the correct project.
+                return; 
             } else if (visibleProjects.length === 0 && this.currentUser.role !== 'member') {
-                // No projects exist for this privileged user. Create a default one.
                 this.addProject("My First Project");
-                return; // Exit to wait for the listener to re-run.
+                return; 
             }
 
             if (!this.dataLoaded) {
@@ -237,8 +306,10 @@ class Store {
     // --- PROJECT & ITEM CRUD ---
     setActiveProject(id) {
         this.activeProjectId = id;
-        this.db.ref('activeProjectId').set(id);
+        sessionStorage.setItem('projectflow_activeProjectId', id);
+        this.app.render(); // Manually trigger a re-render
     }
+
     addProject(name) {
         const newProjectRef = this.db.ref('projects').push();
         const projectData = { id: newProjectRef.key, name: name };
@@ -257,9 +328,22 @@ class Store {
     addTeamMember(data) { const id = `mem_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/team/${id}`).set(new TeamMember(id, data.name, data.role, data.avatar)); }
     updateTeamMember(id, data) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).update(data); }
     deleteTeamMember(id) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).remove(); }
-    addTask(data) { const id = `task_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).set(new Task(id, data.name, data.description, data.assignedTo, data.startDate, data.endDate, data.category, data.priority)); }
+    addTask(data) { 
+        const id = `task_${Date.now()}`; 
+        const newTask = new Task(id, data.name, data.description, data.assignedTo, data.startDate, data.endDate, data.category, data.priority, false, false, 0, false);
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).set(newTask); 
+    }
     updateTask(id, data) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(data); }
-    toggleTaskCompletion(id) { const task = this.getTask(id); if (task) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/completed`).set(!task.completed); } }
+    toggleTaskCompletion(id) { 
+        const task = this.getTask(id);
+        if (task) { 
+            const updates = {
+                completed: true,
+                pendingCompletion: false
+            };
+            this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
+        } 
+    }
     deleteTask(id) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).remove(); }
     getTask(id) { return this.getActiveProject()?.tasks.find(t => t.id === id); }
     addMilestone(d) { const id = `mile_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).set(new Milestone(id, d.name, d.startDate, d.endDate)); }
@@ -278,6 +362,17 @@ class Store {
     updateRisk(id, d) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).update(d); }
     deleteRisk(id) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).remove(); }
     getRisk(id) { return this.getActiveProject()?.risks.find(r => r.id === id); }
+    restoreTask(id) {
+        if (!this.activeProjectId || !id) return;
+        const updates = {
+            completed: false,
+            pendingCompletion: false,
+            progress: 0
+        };
+        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
+    }
 }
+
+
 
 export const store = new Store();
