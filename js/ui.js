@@ -1,5 +1,5 @@
 class UI {
-    constructor(){this.loader=document.getElementById("loader"),this.mainContent=document.getElementById("main-content"),this.projectSelector=document.getElementById("project-selector"),this.dashboardContent=document.getElementById("dashboard-content"),this.teamGrid=document.getElementById("team-grid"),this.taskListPending=document.getElementById("task-list-pending"),this.taskListFinished=document.getElementById("task-list-finished"),this.milestoneList=document.getElementById("milestone-list"),this.statusList=document.getElementById("status-list"),this.riskTableContainer=document.getElementById("risk-table-container"),this.teamMemberProfileContent=document.getElementById("team-member-profile-content"),this.modal={container:document.getElementById("modal-container"),title:document.getElementById("modal-title"),body:document.getElementById("modal-body"),closeBtn:document.getElementById("modal-close-btn"),backdrop:document.querySelector(".modal-backdrop")}};
+    constructor(){this.loader=document.getElementById("loader"),this.mainContent=document.getElementById("main-content"),this.projectSelector=document.getElementById("project-selector"),this.dashboardContent=document.getElementById("dashboard-content"),this.teamGrid=document.getElementById("team-grid"),this.taskListPending=document.getElementById("task-list-pending"),this.taskListOverdue=document.getElementById("task-list-overdue"),this.taskListFinished=document.getElementById("task-list-finished"),this.milestoneList=document.getElementById("milestone-list"),this.statusList=document.getElementById("status-list"),this.riskTableContainer=document.getElementById("risk-table-container"),this.teamMemberProfileContent=document.getElementById("team-member-profile-content"),this.modal={container:document.getElementById("modal-container"),title:document.getElementById("modal-title"),body:document.getElementById("modal-body"),closeBtn:document.getElementById("modal-close-btn"),backdrop:document.querySelector(".modal-backdrop")}};
     showLoader(){this.loader.classList.add("visible")} hideLoader(){this.loader.classList.remove("visible")}
     switchView(viewId){this.mainContent.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));const viewEl=this.mainContent.querySelector(`#${viewId}-view`);if(viewEl)viewEl.classList.add("active");document.querySelectorAll(".sidebar-nav .nav-link").forEach(l=>{l.classList.remove("active");l.dataset.view===viewId&&l.classList.add("active")})}
         renderProjects(projects, activeId) {
@@ -250,8 +250,16 @@ class UI {
             case 'priority': default: sortedTasks.sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4)); break;
         }
 
-        const pendingTasks = sortedTasks.filter(t => !t.completed);
+        const allPendingTasks = sortedTasks.filter(t => !t.completed);
         const finishedTasks = sortedTasks.filter(t => t.completed);
+
+        // --- NEW FILTERING LOGIC ---
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize to the start of today for accurate comparison
+
+        const overdueTasks = allPendingTasks.filter(t => t.endDate && new Date(t.endDate) < today);
+        // "Pending" now means tasks that are not complete AND not overdue.
+        const pendingTasks = allPendingTasks.filter(t => !overdueTasks.includes(t));
     
         const createTaskHTML = (task) => {
             const assignee = team.find(m => m.id === task.assignedTo);
@@ -301,9 +309,9 @@ class UI {
             </div>`;
         };
         this.taskListPending.innerHTML = pendingTasks.length > 0 ? pendingTasks.map(createTaskHTML).join('') : '<div class="card"><p>No pending tasks.</p></div>';
+        this.taskListOverdue.innerHTML = overdueTasks.length > 0 ? overdueTasks.map(createTaskHTML).join('') : '<div class="card"><p>No overdue tasks. Well done!</p></div>';
         this.taskListFinished.innerHTML = finishedTasks.length > 0 ? finishedTasks.map(createTaskHTML).join('') : '<div class="card"><p>No finished tasks.</p></div>';
     
-        // Render Selection Bar
         const selectionBar = document.getElementById('task-selection-bar');
         if (selectedTaskIds.size > 0) {
             selectionBar.querySelector('#selection-count').textContent = `${selectedTaskIds.size} selected`;

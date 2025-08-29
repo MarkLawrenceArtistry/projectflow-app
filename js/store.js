@@ -82,7 +82,7 @@ class Store {
                     userStatusRef.set({ name: this.currentUser.name, role: this.currentUser.role });
                     userStatusRef.onDisconnect().remove();
                     
-                    this.app.showMainApp();
+                    // The line that showed the app too early has been removed from here.
                     this.initFirebaseListeners();
                 } else {
                     this.logout();
@@ -182,8 +182,7 @@ class Store {
                     project.ganttPhases = pData.ganttPhases ? Object.values(pData.ganttPhases) : [];
                     project.risks = pData.risks ? Object.values(pData.risks) : [];
 
-                    // New Status Item Loading
-                    project.rawStatusData = pData.statusItems || {}; // Store raw data with keys
+                    project.rawStatusData = pData.statusItems || {};
                     project.statusItems = pData.statusItems 
                         ? Object.values(pData.statusItems).sort((a, b) => (a.order || 0) - (b.order || 0))
                         : [];
@@ -209,6 +208,7 @@ class Store {
 
             if (!this.dataLoaded) {
                 this.dataLoaded = true;
+                this.app.showMainApp(); // <-- THE FIX: Show the app now that it's ready.
                 this.app.initMainApp();
             } else {
                 this.app.render();
