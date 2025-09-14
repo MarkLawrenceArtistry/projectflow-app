@@ -1,10 +1,8 @@
+// js/store.js
 
+import { ui } from './ui.js'; // <-- THE FIX IS HERE
 
-
-// PINPOINT: In js/app.js, at the bottom, REPLACE the existing Task class with this one.
-
-// PINPOINT: In js/app.js, at the bottom, REPLACE the existing Task class with this one.
-
+// --- Data models remain the same, as they are used by the UI ---
 class Task { 
     constructor(id, name, description, assignedTo, startDate, endDate, category, priority, completed = false, acknowledged = false, progress = 0, pendingCompletion = false) { 
         this.id = id; 
@@ -28,389 +26,384 @@ class GanttPhase { constructor(id, name, startDate, endDate, color) { this.id = 
 class Risk { constructor(id, description, impact, priority) { this.id = id; this.description = description; this.impact = impact; this.priority = priority; } }
 class Project { constructor(id, name) { this.id = id; this.name = name; this.tasks = []; this.team = {}; this.milestones = []; this.statusItems = []; this.ganttPhases = []; this.risks = []; } }
 class User { constructor(id, name, email, password, role = 'member') { this.id = id; this.name = name; this.email = email; this.password = password; this.role = role; }}
+
+
+// SUPABASE CHANGE: Helper function to convert database snake_case keys to JS camelCase
+function snakeToCamel(obj) {
+    if (Array.isArray(obj)) {
+        return obj.map(v => snakeToCamel(v));
+    } else if (obj !== null && obj.constructor === Object) {
+        return Object.keys(obj).reduce((result, key) => {
+            const camelKey = key.replace(/([-_][a-z])/ig, ($1) => {
+                return $1.toUpperCase().replace('-', '').replace('_', '');
+            });
+            result[camelKey] = snakeToCamel(obj[key]);
+            return result;
+        }, {});
+    }
+    return obj;
+}
+
+// SUPABASE CHANGE: Helper function to convert JS camelCase keys to database snake_case
+function camelToSnake(obj) {
+    if (Array.isArray(obj)) {
+        return obj.map(v => camelToSnake(v));
+    } else if (obj !== null && obj.constructor === Object) {
+        return Object.keys(obj).reduce((result, key) => {
+            const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+            result[snakeKey] = camelToSnake(obj[key]);
+            return result;
+        }, {});
+    }
+    return obj;
+}
+
+
 class Store {
     constructor() {
-        this.db = null;
+        // SUPABASE CHANGE: Replaced 'db' with 'supabase'
+        this.supabase = null;
         this.app = null;
         
-        this.users = [];
-        this.currentUser = null;
-        this.onlineUsers = []; // Add this line
+        this.users = []; // Will store from 'profiles' table
+        this.currentUser = null; // Will store profile and auth user merged
+        this.onlineUsers = [];
         
         this.projects = [];
         this.activeProjectId = null;
         this.dataLoaded = false;
+        
+        this.subscriptions = []; // To keep track of realtime subscriptions
     }
 
-    init(db, app) {
-        this.db = db;
+    // SUPABASE CHANGE: init method now takes the supabase client
+    init(supabase, app) {
+        this.supabase = supabase;
         this.app = app;
         
-        // First, check for a logged-in user in the session
+        // Listen for authentication state changes
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN') {
+                this.handleLogin(session.user);
+            } else if (event === 'SIGNED_OUT') {
+                this.handleLogout();
+            }
+        });
+
+        // Check for existing session on page load
         this.checkSession();
     }
 
-    updateTaskProgress(id, progress) {
-        if (!this.activeProjectId || !id) return;
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/progress`).set(Number(progress));
+    async handleLogin(user) {
+        // Fetch the user's profile from the 'profiles' table
+        const { data: profile, error } = await this.supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+
+        if (error) {
+            console.error('Error fetching profile:', error);
+            this.logout();
+            return;
+        }
+
+        this.currentUser = { ...user, ...profile };
+        
+        // This is a simplified presence implementation.
+        // A full implementation would use Supabase Realtime Channels.
+        this.onlineUsers = [{ name: this.currentUser.name, role: this.currentUser.role }];
+
+        await this.loadInitialData();
     }
 
-    requestTaskCompletion(id, isPending) {
-        if (!this.activeProjectId || !id) return;
-        const updates = {
-            pendingCompletion: isPending,
-            progress: 100
-        };
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
+    handleLogout() {
+        this.currentUser = null;
+        sessionStorage.removeItem('projectflow_activeProjectId');
+        this.subscriptions.forEach(sub => this.supabase.removeChannel(sub));
+        this.subscriptions = [];
+        window.location.reload();
     }
-    acknowledgeTask(id) {
-        if (!this.activeProjectId || !id) return;
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/acknowledged`).set(true);
-    }
-    
-    // --- AUTHENTICATION AND SESSION ---
 
-    // PINPOINT: In js/store.js, inside the Store class, REPLACE the checkSession method.
-
-    checkSession() {
-        const userId = sessionStorage.getItem('projectflow_userId');
-        if (userId) {
-            this.db.ref(`/users/${userId}`).once('value', (snapshot) => {
-                this.currentUser = snapshot.val();
-                if (this.currentUser) {
-                    const userStatusRef = this.db.ref(`/presence/${this.currentUser.id}`);
-                    userStatusRef.set({ name: this.currentUser.name, role: this.currentUser.role });
-                    userStatusRef.onDisconnect().remove();
-                    
-                    // The line that showed the app too early has been removed from here.
-                    this.initFirebaseListeners();
-                } else {
-                    this.logout();
-                }
-            });
+    // --- AUTHENTICATION AND SESSION (Replaced with Supabase Auth)---
+    async checkSession() {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        if (session) {
+            await this.handleLogin(session.user);
         } else {
             this.app.showLogin();
         }
     }
 
-    login(email, password) {
-        this.db.ref('/users').orderByChild('email').equalTo(email).once('value', (snapshot) => {
-            if (snapshot.exists()) {
-                const userId = Object.keys(snapshot.val())[0];
-                const user = snapshot.val()[userId];
-
-                if (user.password === password) { 
-                    this.currentUser = user;
-                    sessionStorage.setItem('projectflow_userId', user.id);
-
-                    const userStatusRef = this.db.ref(`/presence/${user.id}`);
-                    userStatusRef.set({ name: user.name, role: user.role });
-                    userStatusRef.onDisconnect().remove();
-
-                    this.app.showMainApp();
-                    this.initFirebaseListeners();
-                } else {
-                    alert('Incorrect password.');
-                }
-            } else {
-                alert('User with that email does not exist.');
-            }
-        });
+    async login(email, password) {
+        const { error } = await this.supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            alert(error.message);
+        }
     }
 
-    register(name, email, password) {
-        this.db.ref('/users').orderByChild('email').equalTo(email).once('value', (snapshot) => {
-            if (snapshot.exists()) {
-                alert('A user with this email already exists.');
-            } else {
-                const newUserId = `user_${Date.now()}`;
-                const newUser = new User(newUserId, name, email, password, 'member'); // Default role is member
-                this.db.ref(`/users/${newUserId}`).set(newUser).then(() => {
-                    alert('Registration successful! Please log in.');
-                    this.app.showLogin(true); // Switch to login form
-                });
-            }
-        });
+    async register(name, email, password) {
+        alert("Registration is currently disabled. Please ask an admin to create an account for you.");
+        // NOTE: A full implementation would need to handle user sign-up
+        // and the creation of a corresponding entry in the `profiles` table,
+        // often using a database trigger/function.
+        // For simplicity, it's recommended to add users directly in the Supabase dashboard for now.
     }
     
-    logout() {
-        if (this.currentUser) {
-            this.db.ref(`/presence/${this.currentUser.id}`).remove();
-        }
-        sessionStorage.removeItem('projectflow_userId');
-        this.currentUser = null;
-        window.location.reload();
+    async logout() {
+        await this.supabase.auth.signOut();
     }
 
-    // PINPOINT: store.js -> Store class (add this new method)
-    changePassword(newPassword) {
+    async changePassword(newPassword) {
         if (!this.currentUser) return;
-        
-        const userId = this.currentUser.id;
-        this.db.ref(`/users/${userId}/password`).set(newPassword)
-            .then(() => {
-                alert('Password updated successfully!');
-            })
-            .catch(error => {
-                alert('An error occurred. Could not update password.');
-                console.error("Password update error:", error);
-            });
-    }
-
-    updateProject(id, data) {
-        // 'data' will be an object like { name: "New Project Name" }
-        this.db.ref(`projects/${id}`).update(data);
-    }
-    initFirebaseListeners() {
-        this.db.ref('/presence').on('value', (snapshot) => {
-            this.onlineUsers = snapshot.val() ? Object.values(snapshot.val()) : [];
-            if (this.dataLoaded) { this.app.render(); }
-        });
-
-        this.db.ref('/').on('value', (snapshot) => {
-            const data = snapshot.val() || {};
-            this.users = data.users ? Object.values(data.users) : [];
-            if (data.projects) {
-                this.projects = Object.values(data.projects).map(pData => {
-                    const project = new Project(pData.id, pData.name);
-                    project.team = pData.team || {};
-                    if (pData.tasks) {
-                        project.tasks = Object.values(pData.tasks).map(tData => new Task(tData.id, tData.name, tData.description, tData.assignedTo, tData.startDate, tData.endDate, tData.category, tData.priority, tData.completed || false, tData.acknowledged || false, tData.progress || 0, tData.pendingCompletion || false));
-                    } else { project.tasks = []; }
-                    
-                    project.milestones = pData.milestones ? Object.values(pData.milestones) : [];
-                    project.ganttPhases = pData.ganttPhases ? Object.values(pData.ganttPhases) : [];
-                    project.risks = pData.risks ? Object.values(pData.risks) : [];
-
-                    project.rawStatusData = pData.statusItems || {};
-                    project.statusItems = pData.statusItems 
-                        ? Object.values(pData.statusItems).sort((a, b) => (a.order || 0) - (b.order || 0))
-                        : [];
-
-                    return project;
-                });
-                this.activeProjectId = sessionStorage.getItem('projectflow_activeProjectId') || null;
-            } else {
-                this.projects = [];
-                this.activeProjectId = null;
-            }
-
-            const visibleProjects = this.getVisibleProjects();
-            const activeProjectIsVisible = this.activeProjectId && visibleProjects.some(p => p.id === this.activeProjectId);
-
-            if (!activeProjectIsVisible && visibleProjects.length > 0) {
-                this.setActiveProject(visibleProjects[0].id);
-                return; 
-            } else if (visibleProjects.length === 0 && this.currentUser.role !== 'member') {
-                this.addProject("My First Project");
-                return; 
-            }
-
-            if (!this.dataLoaded) {
-                this.dataLoaded = true;
-                this.app.showMainApp(); // <-- THE FIX: Show the app now that it's ready.
-                this.app.initMainApp();
-            } else {
-                this.app.render();
-            }
-        });
-    }
-
-    extendTaskDeadline(id) {
-        if (!this.activeProjectId || !id) return;
-        const task = this.getTask(id);
-        if (!task) return;
-
-        const currentDueDate = task.endDate ? new Date(task.endDate) : new Date();
-        currentDueDate.setMinutes(currentDueDate.getMinutes() + currentDueDate.getTimezoneOffset()); // Adjust for timezone
-        currentDueDate.setDate(currentDueDate.getDate() + 7);
-
-        const newEndDate = currentDueDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}/endDate`).set(newEndDate);
-    }
-    deleteMultipleTasks(taskIds) {
-        if (!this.activeProjectId || taskIds.size === 0) return;
-        
-        const updates = {};
-        taskIds.forEach(id => {
-            updates[`/projects/${this.activeProjectId}/tasks/${id}`] = null;
-        });
-
-        this.db.ref().update(updates)
-            .then(() => {
-                // After successful deletion, clear the selection in the app
-                this.app.selectedTaskIds.clear();
-                this.app.render(); // Re-render to update the UI
-            })
-            .catch(error => {
-                console.error("Batch delete failed: ", error);
-                alert("Could not delete all selected tasks. Please try again.");
-            });
-    }
-
-    updateStatusOrder(orderedIds) {
-        if (!this.activeProjectId) return;
-        const project = this.getActiveProject();
-        if (!project) return;
-    
-        const updates = {};
-        orderedIds.forEach((id, index) => {
-            // Find the original key for the status item to update its order property
-            const originalKey = Object.keys(project.rawStatusData || {}).find(key => project.rawStatusData[key].id === id);
-            if (originalKey) {
-                updates[`/projects/${this.activeProjectId}/statusItems/${originalKey}/order`] = index;
-            }
-        });
-    
-        this.db.ref().update(updates);
-    }
-
-    // --- USER MANAGEMENT (ADMIN) ---
-    getAllUsers() {
-        return this.users;
-    }
-    addUser(data) {
-        const id = `user_${Date.now()}`;
-        const newUser = new User(id, data.name, data.email, data.password, data.role);
-        this.db.ref(`/users/${id}`).set(newUser);
-    }
-    updateUser(id, data) {
-        this.db.ref(`/users/${id}`).update(data);
-    }
-    deleteUser(id) {
-        // Here you would also want to remove the user from all project teams
-        this.db.ref(`/users/${id}`).remove();
-    }
-
-    // --- DATA GETTERS WITH ROLE-BASED FILTERING ---
-    getVisibleProjects() {
-        if (!this.currentUser) return [];
-        if (this.currentUser.role === 'admin' || this.currentUser.role === 'leader') {
-            return this.projects;
+        const { error } = await this.supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+            alert(error.message);
+        } else {
+            alert('Password updated successfully!');
         }
-        // For members, only return projects they are part of
-        return this.projects.filter(p => p.team && p.team[this.currentUser.id]);
     }
 
-    getActiveProject() {
-        const visibleProjects = this.getVisibleProjects();
-        if (!this.activeProjectId || !visibleProjects.some(p => p.id === this.activeProjectId)) return null;
-        return this.projects.find(p => p.id === this.activeProjectId);
-    }
-    
-        // PINPOINT: store.js -> Store class -> getProjectTeamMembers method
-        getProjectTeamMembers() {
-        const project = this.getActiveProject();
-        if (!project || !project.team) return [];
-        
-        return Object.values(project.team)
-            .map(profile => {
-                const user = this.users.find(u => u.id === profile.userId);
-                // If the user was deleted but still exists in the project, 'user' will be undefined.
-                if (!user) {
-                    return null; // Mark this profile for removal
-                }
-                return {
-                    ...user,
-                    profileRole: profile.profileRole,
-                    avatar: profile.avatar
+    // --- DATA LOADING AND REALTIME (Replaced with Supabase queries and subscriptions) ---
+    async loadInitialData() {
+        if (!this.currentUser) return;
+        ui.showLoader();
+
+        // 1. Fetch all user profiles
+        const { data: profiles, error: profilesError } = await this.supabase.from('profiles').select('*');
+        if (profilesError) { console.error(profilesError); ui.hideLoader(); return; }
+        this.users = snakeToCamel(profiles);
+
+        // 2. Fetch projects visible to the current user (RLS handles filtering)
+        const { data: projectData, error: projectsError } = await this.supabase.from('projects').select(`
+            id, name,
+            project_members ( user_id, profile_role, avatar ),
+            tasks ( * ),
+            milestones ( * ),
+            status_items ( * ),
+            gantt_phases ( * ),
+            risks ( * )
+        `);
+        if (projectsError) { console.error(projectsError); ui.hideLoader(); return; }
+
+        // 3. Transform the relational data into the nested structure the UI expects
+        this.projects = projectData.map(p => {
+            const project = new Project(p.id, p.name);
+            project.team = {};
+            p.project_members.forEach(m => {
+                project.team[m.user_id] = {
+                    userId: m.user_id,
+                    profileRole: m.profile_role,
+                    avatar: m.avatar
                 };
-            })
-            .filter(Boolean); // This is a clever trick to remove all null/undefined items from the array.
+            });
+            project.tasks = snakeToCamel(p.tasks).map(t => new Task(t.id, t.name, t.description, t.assignedTo, t.startDate, t.endDate, t.category, t.priority, t.completed, t.acknowledged, t.progress, t.pendingCompletion));
+            project.milestones = snakeToCamel(p.milestones);
+            project.risks = snakeToCamel(p.risks);
+            project.ganttPhases = snakeToCamel(p.gantt_phases);
+            project.statusItems = snakeToCamel(p.status_items).sort((a,b) => (a.order || 0) - (b.order || 0));
+            return project;
+        });
+
+        this.activeProjectId = sessionStorage.getItem('projectflow_activeProjectId') || null;
+        
+        const visibleProjects = this.getVisibleProjects();
+        if (visibleProjects.length > 0 && (!this.activeProjectId || !visibleProjects.some(p => p.id === this.activeProjectId))) {
+            this.setActiveProject(visibleProjects[0].id);
+            // No need to render here, setActiveProject does it
+        } else if (visibleProjects.length === 0) {
+             this.activeProjectId = null;
+        }
+        
+        if (!this.dataLoaded) {
+            this.dataLoaded = true;
+            this.app.showMainApp();
+            this.app.initMainApp();
+            this.setupRealtimeListeners();
+        } else {
+            this.app.render();
+        }
+        ui.hideLoader();
     }
 
-    // PINPOINT: store.js -> Store class -> addMemberToProject method
-    addMemberToProject(userId, profileRole, avatar) {
-        const profileData = {
-            userId: userId,
-            profileRole: profileRole,
-            avatar: avatar || ''
-        };
-        // Use the userId as the key for the profile in the team object
-        this.db.ref(`projects/${this.activeProjectId}/team/${userId}`).set(profileData);
+    setupRealtimeListeners() {
+        // This function will listen for any change in the database and simply reload all data.
+        // A more optimized approach would be to handle individual inserts, updates, and deletes.
+        if (this.subscriptions.length > 0) return; // Don't subscribe multiple times
+
+        const channel = this.supabase.channel('public:all');
+        channel.on('postgres_changes', { event: '*', schema: 'public' }, payload => {
+            console.log('Database change received!', payload);
+            this.loadInitialData(); // Reload data on any change
+        }).subscribe();
+        this.subscriptions.push(channel);
     }
 
-    // PINPOINT: store.js -> Store class -> removeMemberFromProject method
-    removeMemberFromProject(userId) {
-        this.db.ref(`projects/${this.activeProjectId}/team/${userId}`).remove();
+    // --- CRUD Methods (Replaced with Supabase queries) ---
+    // Note: To keep the UI layer unchanged, we convert from camelCase (JS) to snake_case (DB).
+
+    async updateProject(id, data) {
+        await this.supabase.from('projects').update(camelToSnake(data)).eq('id', id);
     }
     
-    // PINPOINT: store.js -> Store class -> getMember method
-    getMember(id) {
-        // This now correctly gets the full merged profile (user data + project profile)
-        return this.getProjectTeamMembers().find(m => m.id === id);
+    async addProject(name) {
+        const { data, error } = await this.supabase.from('projects').insert({ name }).select().single();
+        if (error) { console.error(error); return; }
+        // When creating a project, also add the creator as a member.
+        const creatorProfile = this.users.find(u => u.id === this.currentUser.id);
+        await this.addMemberToProject(data.id, this.currentUser.id, creatorProfile?.role || 'leader', '👑');
+        this.setActiveProject(data.id);
     }
-
-    // --- PROJECT & ITEM CRUD ---
-    setActiveProject(id) {
-        this.activeProjectId = id;
-        sessionStorage.setItem('projectflow_activeProjectId', id);
-        this.app.render(); // Manually trigger a re-render
-    }
-
-    addProject(name) {
-        const newProjectRef = this.db.ref('projects').push();
-        const projectData = { id: newProjectRef.key, name: name };
-        newProjectRef.set(projectData);
-        this.setActiveProject(newProjectRef.key);
-    }
-    deleteProject(id) {
-        if (this.projects.length <= 1) {
+    
+    async deleteProject(id) {
+         if (this.projects.length <= 1) {
             alert("You cannot delete the last project.");
             return;
         }
-        this.db.ref(`projects/${id}`).remove();
+        await this.supabase.from('projects').delete().eq('id', id);
+    }
+    
+    async addMemberToProject(userId, profileRole, avatar) {
+        // Note: Project ID is taken from activeProjectId
+        await this.supabase.from('project_members').insert({
+            project_id: this.activeProjectId,
+            user_id: userId,
+            profile_role: profileRole,
+            avatar: avatar || '👤'
+        });
     }
 
-    // --- Other CRUD methods remain largely the same, just ensure they use this.activeProjectId
-    addTeamMember(data) { const id = `mem_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/team/${id}`).set(new TeamMember(id, data.name, data.role, data.avatar)); }
-    updateTeamMember(id, data) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).update(data); }
-    deleteTeamMember(id) { this.db.ref(`projects/${this.activeProjectId}/team/${id}`).remove(); }
-    addTask(data) { 
-        const id = `task_${Date.now()}`; 
-        const newTask = new Task(id, data.name, data.description, data.assignedTo, data.startDate, data.endDate, data.category, data.priority, false, false, 0, false);
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).set(newTask); 
+    async removeMemberFromProject(userId) {
+        await this.supabase.from('project_members').delete()
+            .eq('project_id', this.activeProjectId)
+            .eq('user_id', userId);
     }
-    updateTask(id, data) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(data); }
-    toggleTaskCompletion(id) { 
+
+    async addTask(data) {
+        const snakeData = camelToSnake(data);
+        await this.supabase.from('tasks').insert({ ...snakeData, project_id: this.activeProjectId });
+    }
+    
+    async updateTask(id, data) {
+        await this.supabase.from('tasks').update(camelToSnake(data)).eq('id', id);
+    }
+
+    async deleteTask(id) {
+        await this.supabase.from('tasks').delete().eq('id', id);
+    }
+
+    async deleteMultipleTasks(taskIds) {
+        const ids = Array.from(taskIds);
+        const { error } = await this.supabase.from('tasks').delete().in('id', ids);
+        if(!error) {
+            this.app.selectedTaskIds.clear();
+        } else {
+            console.error(error);
+            alert("Could not delete tasks.");
+        }
+    }
+
+    async updateTaskProgress(id, progress) {
+        await this.supabase.from('tasks').update({ progress: Number(progress) }).eq('id', id);
+    }
+
+    async requestTaskCompletion(id, isPending) {
+        await this.supabase.from('tasks').update({ pending_completion: isPending, progress: 100 }).eq('id', id);
+    }
+
+    async acknowledgeTask(id) {
+        await this.supabase.from('tasks').update({ acknowledged: true }).eq('id', id);
+    }
+
+    async toggleTaskCompletion(id) {
+        await this.supabase.from('tasks').update({ completed: true, pending_completion: false }).eq('id', id);
+    }
+    
+    async restoreTask(id) {
+        await this.supabase.from('tasks').update({ completed: false, pending_completion: false, progress: 0 }).eq('id', id);
+    }
+    
+    async extendTaskDeadline(id) {
         const task = this.getTask(id);
-        if (task) { 
-            const updates = {
-                completed: true,
-                pendingCompletion: false
+        if (!task) return;
+        const currentDueDate = task.endDate ? new Date(task.endDate) : new Date();
+        currentDueDate.setDate(currentDueDate.getDate() + 8); // Add 8 to account for timezone issues
+        const newEndDate = currentDueDate.toISOString().split('T')[0];
+        await this.supabase.from('tasks').update({ end_date: newEndDate }).eq('id', id);
+    }
+
+    // --- GETTERS (Mostly operate on local data, so they need fewer changes) ---
+    getAllUsers() {
+        return this.users;
+    }
+
+    getVisibleProjects() {
+        if (!this.currentUser) return [];
+        // Since RLS is handled by Supabase, the user should only ever receive projects they can see.
+        return this.projects;
+    }
+
+    getActiveProject() {
+        if (!this.activeProjectId) return null;
+        return this.projects.find(p => p.id === this.activeProjectId);
+    }
+    
+    getProjectTeamMembers() {
+        const project = this.getActiveProject();
+        if (!project || !project.team) return [];
+        
+        return Object.values(project.team).map(profile => {
+            const user = this.users.find(u => u.id === profile.userId);
+            if (!user) return null;
+            return {
+                ...user,
+                profileRole: profile.profileRole,
+                avatar: profile.avatar
             };
-            this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
-        } 
+        }).filter(Boolean);
     }
-    deleteTask(id) { this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).remove(); }
+    
+    getMember(id) {
+        return this.getProjectTeamMembers().find(m => m.id === id);
+    }
+
+    setActiveProject(id) {
+        this.activeProjectId = id;
+        sessionStorage.setItem('projectflow_activeProjectId', id);
+        this.app.render();
+    }
+    
     getTask(id) { return this.getActiveProject()?.tasks.find(t => t.id === id); }
-    addMilestone(d) { const id = `mile_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).set(new Milestone(id, d.name, d.startDate, d.endDate)); }
-    updateMilestone(id, d) { this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).update(d); }
-    deleteMilestone(id) { this.db.ref(`projects/${this.activeProjectId}/milestones/${id}`).remove(); }
     getMilestone(id) { return this.getActiveProject()?.milestones.find(m => m.id === id); }
-    addStatusItem(d) { const id = `status_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).set(new StatusItem(id, d.name, d.progress, d.color)); }
-    updateStatusItem(id, d) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).update(d); }
-    deleteStatusItem(id) { this.db.ref(`projects/${this.activeProjectId}/statusItems/${id}`).remove(); }
     getStatusItem(id) { return this.getActiveProject()?.statusItems.find(s => s.id === id); }
-    addGanttPhase(d) { const id = `gantt_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).set(new GanttPhase(id, d.name, d.startDate, d.endDate, d.color)); }
-    updateGanttPhase(id, d) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).update(d); }
-    deleteGanttPhase(id) { this.db.ref(`projects/${this.activeProjectId}/ganttPhases/${id}`).remove(); }
     getGanttPhase(id) { return this.getActiveProject()?.ganttPhases.find(p => p.id === id); }
-    addRisk(d) { const id = `risk_${Date.now()}`; this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).set(new Risk(id, d.description, d.impact, d.priority)); }
-    updateRisk(id, d) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).update(d); }
-    deleteRisk(id) { this.db.ref(`projects/${this.activeProjectId}/risks/${id}`).remove(); }
     getRisk(id) { return this.getActiveProject()?.risks.find(r => r.id === id); }
-    restoreTask(id) {
-        if (!this.activeProjectId || !id) return;
-        const updates = {
-            completed: false,
-            pendingCompletion: false,
-            progress: 0
-        };
-        this.db.ref(`projects/${this.activeProjectId}/tasks/${id}`).update(updates);
+
+    // --- Other CRUD methods ---
+    async addMilestone(d) { await this.supabase.from('milestones').insert({ ...camelToSnake(d), project_id: this.activeProjectId }); }
+    async updateMilestone(id, d) { await this.supabase.from('milestones').update(camelToSnake(d)).eq('id', id); }
+    async deleteMilestone(id) { await this.supabase.from('milestones').delete().eq('id', id); }
+    
+    async addStatusItem(d) { await this.supabase.from('status_items').insert({ ...camelToSnake(d), project_id: this.activeProjectId }); }
+    async updateStatusItem(id, d) { await this.supabase.from('status_items').update(camelToSnake(d)).eq('id', id); }
+    async deleteStatusItem(id) { await this.supabase.from('status_items').delete().eq('id', id); }
+    
+    async updateStatusOrder(orderedIds) {
+        // Supabase doesn't have a great way to do bulk updates in one call via the JS client library,
+        // so we send them one by one. Using a DB function would be more performant for very large lists.
+        const updates = orderedIds.map((id, index) => 
+            this.supabase.from('status_items').update({ order: index }).eq('id', id)
+        );
+        await Promise.all(updates);
     }
+
+    async addGanttPhase(d) { await this.supabase.from('gantt_phases').insert({ ...camelToSnake(d), project_id: this.activeProjectId }); }
+    async updateGanttPhase(id, d) { await this.supabase.from('gantt_phases').update(camelToSnake(d)).eq('id', id); }
+    async deleteGanttPhase(id) { await this.supabase.from('gantt_phases').delete().eq('id', id); }
+
+    async addRisk(d) { await this.supabase.from('risks').insert({ ...camelToSnake(d), project_id: this.activeProjectId }); }
+    async updateRisk(id, d) { await this.supabase.from('risks').update(camelToSnake(d)).eq('id', id); }
+    async deleteRisk(id) { await this.supabase.from('risks').delete().eq('id', id); }
 }
-
-
 
 export const store = new Store();

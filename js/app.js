@@ -1,26 +1,24 @@
+// js/app.js
+
 import { store } from './store.js';
 import { ui } from './ui.js';
 import { gantt } from './gantt.js';
 
-// --- Firebase Initialization ---
-const firebaseConfig = {
-    apiKey: "AIzaSyBmmay0UwmMGVvZJoLmEoCoA5Z_dd5ktRc",
-    authDomain: "projectflow-app-927ba.firebaseapp.com",
-    projectId: "projectflow-app-927ba",
-    storageBucket: "projectflow-app-927ba.appspot.com",
-    messagingSenderId: "976170855110",
-    appId: "1:976170855110:web:273f663617ce4b214205c7"
-};
+// --- SUPABASE CHANGE: Corrected Initialization with your keys ---
+const supabaseUrl = 'https://xopcacjynhmvuapwpzwq.supabase.co';
+const supabaseKey = 'sb_publishable_mvru9z_ebsJ5NSx6P4XF6A_O0P1ifKs'
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+// THE FIX IS HERE: We call the createClient function from the global supabase object
+const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+// --- END SUPABASE CHANGE ---
+
 
 class App {
     constructor() {
         this.currentView = 'dashboard';
         this.currentMemberId = null;
         this.mainAppInitialized = false;
-        this.selectedTaskIds = new Set(); // Add this line
+        this.selectedTaskIds = new Set();
     }
 
     // --- AUTHENTICATION UI FLOW ---
@@ -45,38 +43,34 @@ class App {
     initMainApp() {
         this.render();
 
-        // Then, if we haven't set up the main listeners yet, set them up.
         if (!this.mainAppInitialized) {
             this.setupMainAppEventListeners();
             this.mainAppInitialized = true;
         }
     }
 
-    // PINPOINT: app.js -> App class -> render method
-    // PINPOINT: In js/app.js, inside the App class, REPLACE the render method.
-
-    // PINPOINT: In js/app.js, inside the App class, REPLACE the render method.
-
     render() {
-        ui.showLoader();
         const currentUser = store.currentUser;
-        if (!currentUser) { ui.hideLoader(); return; }
+        if (!currentUser) { return; }
 
         document.getElementById('current-user-info').textContent = `${currentUser.name} (${currentUser.role})`;
         document.getElementById('admin-nav-link').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         
         const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
         document.getElementById('projects-admin-nav-link').style.display = isPrivileged ? 'block' : 'none';
-        document.querySelectorAll('.btn-primary').forEach(btn => { btn.style.display = isPrivileged ? 'inline-block' : 'none'; });
+        
+        document.querySelectorAll('.view-header .btn-primary').forEach(btn => {
+             btn.style.display = isPrivileged ? 'inline-block' : 'none';
+        });
+
         document.getElementById('task-filter-member').style.display = isPrivileged ? 'inline-block' : 'none';
         const visibleProjects = store.getVisibleProjects();
         const project = store.getActiveProject();
         ui.renderProjects(visibleProjects, store.activeProjectId);
 
-        if (!project && this.currentView !== 'projects-admin') {
+        if (!project && this.currentView !== 'projects-admin' && this.currentView !== 'admin') {
             ui.clearAllDataViews();
             document.getElementById('gantt-chart-container').innerHTML = '';
-            ui.hideLoader();
             return;
         }
 
@@ -105,11 +99,10 @@ class App {
             milestones: () => ui.renderMilestones(project.milestones, currentUser),
             status: () => {
                 ui.renderStatus(project.statusItems, currentUser);
-                // Initialize SortableJS here, where 'store' is defined
                 if (currentUser.role !== 'member') {
                     const statusListEl = document.getElementById('status-list');
-                    if (statusListEl) {
-                        new Sortable(statusListEl, {
+                    if (statusListEl && !statusListEl.sortable) {
+                        statusListEl.sortable = new Sortable(statusListEl, {
                             handle: '.drag-handle',
                             animation: 150,
                             onEnd: function (evt) {
@@ -127,20 +120,18 @@ class App {
             'projects-admin': () => ui.renderProjectsAdminView(store.projects, currentUser),
             'team-member-profile': () => {
                 const member = store.getMember(this.currentMemberId);
-                const memberTasks = project.tasks.filter(t => t.assignedTo === this.currentMemberId);
+                const memberTasks = project ? project.tasks.filter(t => t.assignedTo === this.currentMemberId) : [];
                 ui.renderTeamMemberProfile(member, memberTasks);
             }
         };
         ui.switchView(this.currentView);
         if (viewRenderers[this.currentView]) { viewRenderers[this.currentView](); }
-        ui.hideLoader();
     }
 
     // --- EVENT LISTENERS ---
     setupAuthEventListeners() {
         document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); store.login(document.getElementById('login-email').value, document.getElementById('login-password').value); });
         document.getElementById('register-form').addEventListener('submit', e => { e.preventDefault(); store.register(document.getElementById('register-name').value, document.getElementById('register-email').value, document.getElementById('register-password').value); });
-        // document.getElementById('show-register').addEventListener('click', e => { e.preventDefault(); this.showLogin(false); });
         document.getElementById('show-login').addEventListener('click', e => { e.preventDefault(); this.showLogin(true); });
     }
 
@@ -148,42 +139,15 @@ class App {
         if (this.mainAppInitialized) return;
 
         document.getElementById('logout-btn').addEventListener('click', () => store.logout());
-        document.querySelector('.sidebar-nav').addEventListener('click', e => {
-            const link = e.target.closest('.nav-link');
-            if (link) {
-                e.preventDefault();
-                this.currentView = link.dataset.view;
-                this.render();
-                // Close sidebar on mobile after navigation
-                const sidebar = document.getElementById('sidebar');
-                sidebar.classList.remove('open');
-            }
-        });
-        const mobileMenuBtn = document.getElementById('mobile-menu-toggle');
+        
         const sidebar = document.getElementById('sidebar');
+        const mobileMenuBtn = document.getElementById('mobile-menu-toggle');
 
-        // --- NEW AND IMPROVED SIDEBAR LOGIC ---
+        const showHamburger = () => { mobileMenuBtn.style.opacity = '1'; mobileMenuBtn.style.pointerEvents = 'auto'; };
+        const hideHamburger = () => { mobileMenuBtn.style.opacity = '0'; mobileMenuBtn.style.pointerEvents = 'none'; };
 
-        // Function to show the hamburger button
-        const showHamburger = () => {
-            mobileMenuBtn.style.opacity = '1';
-            mobileMenuBtn.style.pointerEvents = 'auto';
-        };
+        mobileMenuBtn.addEventListener('click', (e) => { e.stopPropagation(); sidebar.classList.add('open'); hideHamburger(); });
 
-        // Function to hide the hamburger button
-        const hideHamburger = () => {
-            mobileMenuBtn.style.opacity = '0';
-            mobileMenuBtn.style.pointerEvents = 'none';
-        };
-
-        // 1. When you click the hamburger, open the menu and hide the button.
-        mobileMenuBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevents the document click listener from firing immediately
-            sidebar.classList.add('open');
-            hideHamburger();
-        });
-
-        // 2. When you click a nav link, close the menu and show the button again.
         document.querySelector('.sidebar-nav').addEventListener('click', e => {
             const link = e.target.closest('.nav-link');
             if (link) {
@@ -191,14 +155,12 @@ class App {
                 this.currentView = link.dataset.view;
                 this.render();
                 sidebar.classList.remove('open');
-                showHamburger();
+                showHamburger(); 
             }
         });
 
         document.addEventListener('click', (e) => {
-            // ...if the menu is open AND the click was NOT on the sidebar itself...
             if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
-                // ...close the menu and show the button again.
                 sidebar.classList.remove('open');
                 showHamburger();
             }
@@ -215,11 +177,7 @@ class App {
                 return;
             }
             if (e.target.closest('#admin-view')) {
-                const item = e.target.closest('[data-id]');
-                if (!item) return;
-                const id = item.dataset.id;
-                if (e.target.closest('.edit-btn')) this.handleUserForm(id);
-                if (e.target.closest('.delete-btn')) this.handleUserDelete(id);
+                alert("User management should be done in the Supabase dashboard for security.");
             }
             if (e.target.closest('#team-view')) {
                 const memberCard = e.target.closest('.team-member-card');
@@ -245,7 +203,7 @@ class App {
                 if (taskItem) {
                     const taskId = taskItem.dataset.id;
                     if (action === 'view-details') this.handleTaskDetails(taskId);
-                    else if (action === 'acknowledge') this.handleTaskAcknowledge(taskId);
+                    else if (action === 'acknowledge') store.acknowledgeTask(taskId);
                     else if (action === 'mark-done') store.requestTaskCompletion(taskId, true);
                     else if (action === 'approve') store.toggleTaskCompletion(taskId);
                     else if (action === 'mark-complete') store.toggleTaskCompletion(taskId);
@@ -289,10 +247,8 @@ class App {
             if (e.target.matches('.task-progress-slider')) {
                 const wrapper = e.target.closest('.task-progress-container');
                 if (!wrapper) return;
-                
                 const percentageText = wrapper.querySelector('.task-progress-percentage');
                 const progressValue = e.target.value;
-
                 e.target.style.setProperty('--progress-percent', `${progressValue}%`);
                 if (percentageText) percentageText.textContent = `${progressValue}%`;
             }
@@ -310,7 +266,6 @@ class App {
             if (el) el.addEventListener(event, handler);
         };
         
-        setupListener('add-user-btn', 'click', () => this.handleUserForm());
         setupListener('add-member-to-project-btn', 'click', () => this.handleMemberProfileForm());
         setupListener('add-task-btn', 'click', () => this.handleTaskForm());
         setupListener('add-milestone-btn', 'click', () => this.handleMilestoneForm());
@@ -350,7 +305,6 @@ class App {
         this.mainAppInitialized = true;
     }
     
-    // PINPOINT: app.js -> App class (add this new method)
     handleMemberClick(memberId) {
         this.currentView = 'team-member-profile';
         this.currentMemberId = memberId;
@@ -364,10 +318,6 @@ class App {
         if (task) {
             ui.openModal(`Task: ${task.name}`, ui.createTaskDetailModal(task, team, currentUser));
         }
-    }
-
-    handleTaskAcknowledge(id) {
-        store.acknowledgeTask(id);
     }
 
     handleProjectForm(id) {
@@ -392,7 +342,7 @@ class App {
             store.deleteProject(id);
         }
     }
-    // PINPOINT: app.js -> App class (add this new method)
+
     handleGanttPhaseForm() {
         ui.openModal('Create New Phase', ui.createGanttPhaseForm());
         document.getElementById('form').addEventListener('submit', e => {
@@ -407,7 +357,7 @@ class App {
             ui.closeModal();
         });
     }
-    // PINPOINT: app.js -> App class (add this new method)
+
     handleChangePassword() {
         const newPass = document.getElementById('new-password').value;
         const confirmPass = document.getElementById('confirm-password').value;
@@ -423,15 +373,10 @@ class App {
         }
 
         store.changePassword(newPass);
-        // Clear the form fields after submission
         document.getElementById('new-password').value = '';
         document.getElementById('confirm-password').value = '';
     }
-    // --- FORM & DELETE HANDLERS ---
-    handleUserForm(id) { const isEdit = !!id; const user = isEdit ? store.getAllUsers().find(u => u.id === id) : {}; ui.openModal(isEdit ? 'Edit User' : 'Add New User', ui.createUserForm(user)); document.getElementById('form').addEventListener('submit', e => { e.preventDefault(); const data = { name: document.getElementById('name').value, email: document.getElementById('email').value, role: document.getElementById('role').value }; const password = document.getElementById('password').value; if (password) { data.password = password; } if (isEdit) store.updateUser(id, data); else store.addUser(data); ui.closeModal(); }); }
-    handleUserDelete(id) { const user = store.getAllUsers().find(u => u.id === id); if (user && confirm(`Permanently delete user ${user.name}? This cannot be undone.`)) { store.deleteUser(id); } }
-    // PINPOINT: app.js -> App class -> handleAddMemberToProjectForm method (REPLACE IT)
-        // PINPOINT: app.js -> App class (REPLACE this method)
+
     handleMemberProfileForm(id) {
         const isEdit = !!id;
         const allUsers = store.getAllUsers();
@@ -443,13 +388,10 @@ class App {
         
         const form = document.getElementById('form');
         if (form) {
-            // THE FIX IS HERE: Logic for the new emoji preview
             const avatarInput = document.getElementById('avatar');
             const avatarPreview = document.getElementById('avatar-preview');
             if(avatarInput && avatarPreview) {
-                avatarInput.addEventListener('input', () => {
-                    avatarPreview.textContent = avatarInput.value || '👤';
-                });
+                avatarInput.addEventListener('input', () => { avatarPreview.textContent = avatarInput.value || '👤'; });
             }
 
             form.addEventListener('submit', e => {
@@ -460,7 +402,6 @@ class App {
                 const avatar = document.getElementById('avatar').value || '👤';
                 store.addMemberToProject(userId, profileRole, avatar);
                 ui.closeModal();
-                ui.hideLoader();
             });
         }
     }
@@ -470,34 +411,20 @@ class App {
     
     handleMilestoneForm(id){const i=!!id,t=i?store.getMilestone(id):void 0;ui.openModal(i?'Edit Milestone':'Add Milestone',ui.createMilestoneForm(t)),document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const s={name:document.getElementById('name').value,startDate:document.getElementById('start').value,endDate:document.getElementById('end').value};i?store.updateMilestone(id,s):store.addMilestone(s),ui.closeModal()});}
     handleMilestoneDelete(id) { const t = store.getMilestone(id); if (t && confirm(`Delete milestone "${t.name}"?`)) { store.deleteMilestone(id); } }
+    
     handleStatusForm(id) {
         const isEdit = !!id;
-        const statusItem = isEdit ? store.getStatusItem(id) : {}; // Correctly get the specific item
-
+        const statusItem = isEdit ? store.getStatusItem(id) : {};
         ui.openModal(isEdit ? 'Edit Status' : 'Add Status', ui.createStatusForm(statusItem));
-        
         const progressSlider = document.getElementById('progress');
         const progressValueSpan = document.getElementById('progress-val');
-        
-        // This listener updates the percentage text as you move the slider
         if (progressSlider && progressValueSpan) {
-            progressSlider.addEventListener('input', () => {
-                progressValueSpan.textContent = `${progressSlider.value}%`;
-            });
+            progressSlider.addEventListener('input', () => { progressValueSpan.textContent = `${progressSlider.value}%`; });
         }
-
         document.getElementById('form').addEventListener('submit', e => {
             e.preventDefault();
-            const data = {
-                name: document.getElementById('name').value,
-                progress: document.getElementById('progress').value,
-                color: document.getElementById('color').value
-            };
-            if (isEdit) {
-                store.updateStatusItem(id, data);
-            } else {
-                store.addStatusItem(data);
-            }
+            const data = { name: document.getElementById('name').value, progress: document.getElementById('progress').value, color: document.getElementById('color').value };
+            if (isEdit) { store.updateStatusItem(id, data); } else { store.addStatusItem(data); }
             ui.closeModal();
         });
     }
@@ -517,6 +444,8 @@ function updateOnlineStatus() {
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
-// --- App Initialization ---
+
+// --- App Initialization (SUPABASE CHANGE) ---
 const app = new App();
-store.init(db, app);
+// We pass the new supabaseClient instance to the store
+store.init(supabaseClient, app);
