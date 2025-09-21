@@ -5,8 +5,8 @@ import { ui } from './ui.js';
 import { gantt } from './gantt.js';
 
 // --- SUPABASE CHANGE: Corrected Initialization with your keys ---
-const supabaseUrl = 'https://xopcacjynhmvuapwpzwq.supabase.co';
-const supabaseKey = 'sb_publishable_mvru9z_ebsJ5NSx6P4XF6A_O0P1ifKs'
+const supabaseUrl = 'https://uoafxvpxnchwgdjwxvhu.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvYWZ4dnB4bmNod2dkand4dmh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0NjQ5MjcsImV4cCI6MjA3NDA0MDkyN30.7oza6DdjPSxwyMLBfg0AsjflhMUZgC11MuCt6FJE3ls'
 
 // THE FIX IS HERE: We call the createClient function from the global supabase object
 const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
