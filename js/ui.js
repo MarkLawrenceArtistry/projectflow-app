@@ -102,6 +102,66 @@ class UI {
             </div>`;
         }).join("");
     }
+    renderBacklog(items, currentUser) {
+        const container = document.getElementById('backlog-list');
+        const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
+
+        if (!items || items.length === 0) {
+            container.innerHTML = `<p class="empty-state">The product backlog is empty.${isPrivileged ? ' Add an item to get started!' : ''}</p>`;
+            return;
+        }
+
+        const content = `
+        <div class="table-container">
+            <table class="styled-table">
+                <thead>
+                    <tr>
+                        ${isPrivileged ? '<th style="width: 40px;"></th>' : ''} <!-- Drag Handle Column -->
+                        <th style="width: 60px;">Done</th>
+                        <th>Description</th>
+                        <th>Classification</th>
+                        <th>Priority</th>
+                        ${isPrivileged ? '<th style="width: 120px;">Actions</th>' : ''} <!-- Actions Column -->
+                    </tr>
+                </thead>
+                <tbody id="backlog-table-body">
+                    ${items.map(i => `
+                        <tr data-id="${i.id}">
+                            ${isPrivileged ? '<td><div class="drag-handle" data-tooltip="Drag to reorder">⠿</div></td>' : ''}
+                            <td><input type="checkbox" class="task-item-checkbox" data-action="toggle-done" ${i.isDone ? 'checked' : ''} ${!isPrivileged ? 'disabled' : ''}></td>
+                            <td>${i.description}</td>
+                            <td>${i.classification || 'N/A'}</td>
+                            <td><span class="priority-pill ${i.priority.toLowerCase()}">${i.priority}</span></td>
+                            ${isPrivileged ? `<td>${this.createItemActionsHTML("Backlog Item", currentUser)}</td>` : ''}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>`;
+        container.innerHTML = content;
+    }
+
+    createBacklogItemForm(item = {}) {
+        const priorities = ["Low", "Medium", "High"];
+        return `
+        <form id="form" data-id="${item.id || ''}">
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" class="form-input" rows="3" required>${item.description || ''}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="classification">Classification</label>
+                <input type="text" id="classification" class="form-input" value="${item.classification || ''}" placeholder="e.g., UI/UX, Bug, Feature">
+            </div>
+            <div class="form-group">
+                <label for="priority">Priority</label>
+                <select id="priority" class="form-select">
+                    ${priorities.map(p => `<option value="${p}" ${p === (item.priority || "Medium") ? "selected" : ""}>${p}</option>`).join("")}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Item</button>
+        </form>`;
+    }
     renderAdminView(users, currentUser) {
         const content = `
         <div class="table-container">

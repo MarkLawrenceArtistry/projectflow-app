@@ -63,6 +63,7 @@ class Store {
         this.activeProjectId = null;
         this.dataLoaded = false;
         this.subscriptions = [];
+        this.backlogItems = [];
     }
 
     init(supabase, app) {
@@ -114,10 +115,13 @@ class Store {
     }
 
     async login(email, password) {
-        const { error } = await this.supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
         if (error) {
-            alert(error.message);
+            // Instead of alerting here, we throw the error so the UI can catch it.
+            throw new Error(error.message);
         }
+        // On success, the onAuthStateChange listener will handle the redirect.
+        return data;
     }
 
     async register(name, email, password) {
@@ -145,6 +149,17 @@ class Store {
         const { data: profiles, error: profilesError } = await this.supabase.from('profiles').select('*');
         if (profilesError) { console.error(profilesError); ui.hideLoader(); return; }
         this.users = snakeToCamel(profiles);
+
+        const { data: backlogData, error: backlogError } = await this.supabase
+            .from('backlog_items')
+            .select('*')
+            .order('sort_order', { ascending: true });
+
+        if (backlogError) {
+            console.error('Error fetching backlog items:', backlogError);
+        } else {
+            this.backlogItems = snakeToCamel(backlogData);
+        }
 
         const { data: projectData, error: projectsError } = await this.supabase.from('projects').select(`
             id, name,
@@ -424,6 +439,39 @@ class Store {
     }
 
     // PINPOINT: Add these three functions to your Store class in js/store.js
+
+    async getBacklogItem(id) {
+        return this.backlogItems.find(item => item.id === id);
+    }
+
+    async addBacklogItem(data) {
+        // Set sort_order to be last in the list
+        const maxOrder = this.backlogItems.reduce((max, item) => Math.max(item.sortOrder || 0, max), 0);
+        data.sortOrder = maxOrder + 1;
+        
+        await this.supabase.from('backlog_items').insert(camelToSnake(data));
+        await this.loadInitialData();
+    }
+
+    async updateBacklogItem(id, data) {
+        await this.supabase.from('backlog_items').update(camelToSnake(data)).eq('id', id);
+        await this.loadInitialData();
+    }
+
+    async deleteBacklogItem(id) {
+        await this.supabase.from('backlog_items').delete().eq('id', id);
+        await this.loadInitialData();
+    }
+
+    async updateBacklogOrder(orderedIds) {
+        const updates = orderedIds.map((id, index) =>
+            this.supabase.from('backlog_items').update({ sort_order: index }).eq('id', id)
+        );
+        await Promise.all(updates);
+        // No full reload needed, just re-order locally for faster UI response
+        this.backlogItems.sort((a, b) => orderedIds.indexOf(String(a.id)) - orderedIds.indexOf(String(b.id)));
+        this.app.render();
+    }
 
     async addUserProfile(id, name, email, role) {
         const { error } = await this.supabase.from('profiles').insert({ id, name, email, role });

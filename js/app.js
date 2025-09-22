@@ -19,20 +19,14 @@ class App {
         this.currentMemberId = null;
         this.mainAppInitialized = false;
         this.selectedTaskIds = new Set();
+        this.setupAuthEventListeners();
     }
 
     // --- AUTHENTICATION UI FLOW ---
-    showLogin(showLoginForm = true) {
+    showLogin() {
         document.getElementById('app-container').style.display = 'none';
         document.getElementById('auth-view').style.display = 'flex';
-        if (showLoginForm) {
-            document.getElementById('login-container').style.display = 'block';
-            document.getElementById('register-container').style.display = 'none';
-        } else {
-            document.getElementById('login-container').style.display = 'none';
-            document.getElementById('register-container').style.display = 'block';
-        }
-        this.setupAuthEventListeners();
+        document.getElementById('login-container').style.display = 'block';
     }
 
     showMainApp() {
@@ -57,6 +51,7 @@ class App {
         document.getElementById('admin-nav-link').style.display = currentUser.role === 'admin' ? 'block' : 'none';
         
         const isPrivileged = currentUser.role === 'admin' || currentUser.role === 'leader';
+        document.getElementById('backlog-nav-link').style.display = 'block';
         document.getElementById('projects-admin-nav-link').style.display = isPrivileged ? 'block' : 'none';
         
         document.querySelectorAll('.view-header .btn-primary').forEach(btn => {
@@ -116,6 +111,23 @@ class App {
             risks: () => ui.renderRisks(project.risks, currentUser),
             gantt: () => gantt.render(project),
             settings: () => {},
+            backlog: () => {
+                ui.renderBacklog(store.backlogItems, currentUser);
+                // --- THIS IS THE CHANGE ---
+                if (currentUser.role === 'admin' || currentUser.role === 'leader') {
+                    const backlogTbody = document.getElementById('backlog-table-body');
+                    if (backlogTbody) {
+                        new Sortable(backlogTbody, {
+                            handle: '.drag-handle',
+                            animation: 150,
+                            onEnd: (evt) => {
+                                const orderedIds = Array.from(evt.to.children).map(item => item.dataset.id);
+                                store.updateBacklogOrder(orderedIds);
+                            }
+                        });
+                    }
+                }
+            },
             admin: () => ui.renderAdminView(store.getAllUsers(), currentUser),
             'projects-admin': () => ui.renderProjectsAdminView(store.projects, currentUser),
             'team-member-profile': () => {
@@ -130,10 +142,38 @@ class App {
 
     // --- EVENT LISTENERS ---
     setupAuthEventListeners() {
-        document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); store.login(document.getElementById('login-email').value, document.getElementById('login-password').value); });
-        document.getElementById('register-form').addEventListener('submit', e => { e.preventDefault(); store.register(document.getElementById('register-name').value, document.getElementById('register-email').value, document.getElementById('register-password').value); });
-        document.getElementById('show-login').addEventListener('click', e => { e.preventDefault(); this.showLogin(true); });
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => { // Make the event async
+                e.preventDefault();
+                
+                const loginButton = loginForm.querySelector('button[type="submit"]');
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+
+                // --- Show Spinner ---
+                loginButton.disabled = true;
+                const originalButtonText = loginButton.innerHTML; // Save original text
+                loginButton.innerHTML = '<div class="button-spinner"></div>';
+                loginButton.classList.add('loading');
+
+                try {
+                    await store.login(email, password);
+                    // If login is successful, the app will reload via onAuthStateChange.
+                    // We don't need to do anything here.
+                } catch (error) {
+                    // If login fails, this block will run.
+                    alert(error.message); // Show the error message to the user.
+                    
+                    // --- Hide Spinner and Restore Button ---
+                    loginButton.disabled = false;
+                    loginButton.innerHTML = originalButtonText; // Restore original text
+                    loginButton.classList.remove('loading');
+                }
+            });
+        }
     }
+
 
     setupMainAppEventListeners() {
         if (this.mainAppInitialized) return;
@@ -234,6 +274,31 @@ class App {
                     this.render();
                 }
             }
+            // --- PINPOINT: ADD THIS ENTIRE 'if' BLOCK ---
+            if (e.target.closest('#backlog-view')) {
+                const itemRow = e.target.closest('tr[data-id]');
+                if (!itemRow) return;
+
+                const itemId = itemRow.dataset.id;
+                
+                // Handle checkbox toggle
+                if (e.target.matches('[data-action="toggle-done"]')) {
+                    const isDone = e.target.checked;
+                    store.updateBacklogItem(itemId, { isDone });
+                    return;
+                }
+                
+                // Handle edit button
+                if (e.target.closest('.edit-btn')) {
+                    this.handleBacklogForm(itemId);
+                }
+
+                // Handle delete button
+                if (e.target.closest('.delete-btn')) {
+                    this.handleBacklogDelete(itemId);
+                }
+                return;
+            }
             const views = ['milestones', 'status', 'risks', 'projects-admin'];
             for (const view of views) {
                 if (e.target.closest(`#${view}-view`)) {
@@ -280,6 +345,7 @@ class App {
         setupListener('add-task-btn', 'click', () => this.handleTaskForm());
         setupListener('add-milestone-btn', 'click', () => this.handleMilestoneForm());
         setupListener('add-status-item-btn', 'click', () => this.handleStatusForm());
+        setupListener('add-backlog-item-btn', 'click', () => this.handleBacklogForm());
         setupListener('add-risk-btn', 'click', () => this.handleRiskForm());
         setupListener('add-gantt-phase-btn', 'click', () => this.handleGanttPhaseForm());
         setupListener('add-user-btn', 'click', () => this.handleUserForm());
@@ -473,6 +539,33 @@ class App {
     handleStatusDelete(id) { const t = store.getStatusItem(id); if (t && confirm(`Delete status "${t.name}"?`)) { store.deleteStatusItem(id); } }
     handleRiskForm(id){const i=!!id,r=i?store.getRisk(id):undefined;ui.openModal(i?'Edit Risk':'Add Risk',ui.createRiskForm(r));document.getElementById('form').addEventListener('submit',e=>{e.preventDefault();const d={description:document.getElementById('desc').value,impact:document.getElementById('impact').value,priority:document.getElementById('priority').value};if(i)store.updateRisk(id,d);else store.addRisk(d);ui.closeModal();});}
     handleRiskDelete(id) { if (confirm('Delete this risk?')) { store.deleteRisk(id); } }
+    async handleBacklogForm(id) {
+        const isEdit = !!id;
+        const item = isEdit ? await store.getBacklogItem(parseInt(id)) : {};
+        ui.openModal(isEdit ? 'Edit Backlog Item' : 'Add Backlog Item', ui.createBacklogItemForm(item));
+        
+        document.getElementById('form').addEventListener('submit', e => {
+            e.preventDefault();
+            const data = {
+                description: document.getElementById('description').value,
+                classification: document.getElementById('classification').value,
+                priority: document.getElementById('priority').value
+            };
+            
+            if (isEdit) {
+                store.updateBacklogItem(id, data);
+            } else {
+                store.addBacklogItem(data);
+            }
+            ui.closeModal();
+        });
+    }
+
+    handleBacklogDelete(id) {
+        if (confirm('Are you sure you want to delete this backlog item?')) {
+            store.deleteBacklogItem(id);
+        }
+    }
 }
 
 

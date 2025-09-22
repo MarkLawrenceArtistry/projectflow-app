@@ -16,38 +16,40 @@
     <!-- Auth View (Login/Register) -->
     <div id="auth-view" style="display: none;">
         <div class="auth-container">
-            <div class="auth-form-container" id="login-container">
-                <form id="login-form">
-                    <h2>Login</h2>
-                    <div class="form-group">
-                        <label for="login-email">Email</label>
-                        <input type="email" id="login-email" class="form-input" required>
+            <!-- Left Panel: Form -->
+            <div class="auth-form-panel">
+                <div class="auth-header">
+                    <div class="auth-logo">
+                        ProjectFlow
                     </div>
-                    <div class="form-group">
-                        <label for="login-password">Password</label>
-                        <input type="password" id="login-password" class="form-input" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Login</button>
-                </form>
+                </div>
+
+                <div class="auth-form-container" id="login-container">
+                    <form id="login-form">
+                        <h2>Login</h2>
+                        <p class="auth-subtitle">Welcome back! Please enter your details.</p>
+                        <div class="form-group">
+                            <label for="login-email">Email</label>
+                            <input type="email" id="login-email" class="form-input" required placeholder="Enter your email">
+                        </div>
+                        <div class="form-group">
+                            <label for="login-password">Password</label>
+                            <input type="password" id="login-password" class="form-input" required placeholder="••••••••••">
+                        </div>
+                        <div class="form-options">
+                            <a href="#" class="forgot-password">Forgot Your Password?</a>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Login</button>
+                    </form>
+                </div>
             </div>
-            <div class="auth-form-container" id="register-container" style="display: none;">
-                <form id="register-form">
-                    <h2>Register</h2>
-                    <div class="form-group">
-                        <label for="register-name">Full Name</label>
-                        <input type="text" id="register-name" class="form-input" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="register-email">Email</label>
-                        <input type="email" id="register-email" class="form-input" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="register-password">Password</label>
-                        <input type="password" id="register-password" class="form-input" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary" disabled>Register</button>
-                    <p class="auth-toggle">Already have an account? <a href="#" id="show-login">Login</a></p>
-                </form>
+
+            <!-- Right Panel: Image -->
+            <div class="auth-image-panel">
+                <div class="auth-image-content">
+                    <h1>Welcome to ProjectFlow</h1>
+                    <p>Collaborate, manage, and deliver projects with ease.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -76,6 +78,7 @@
                         <li><a href="#" class="nav-link" data-view="status">Status</a></li>
                         <li><a href="#" class="nav-link" data-view="milestones">Milestones</a></li>
                         <li><a href="#" class="nav-link" data-view="risks">Risks</a></li>
+                        <li id="backlog-nav-link" style="display:none;"><a href="#" class="nav-link" data-view="backlog">Product Backlog</a></li>
                     </ul>
                 </details>
                 <details class="nav-accordion">
@@ -165,6 +168,16 @@
                 </header>
                 <div id="projects-admin-list" class="content-container card">
                     <!-- Project table will be rendered here by ui.js -->
+                </div>
+            </section>
+
+            <section id="backlog-view" class="view">
+                <header class="view-header">
+                    <h1>Product Backlog</h1>
+                    <button id="add-backlog-item-btn" class="btn btn-primary">Add Backlog Item</button>
+                </header>
+                <div id="backlog-list" class="content-container card">
+                    <!-- Backlog table will be rendered here by ui.js -->
                 </div>
             </section>
 
