@@ -422,6 +422,34 @@ class Store {
         await this.supabase.from('risks').delete().eq('id', id);
         await this.loadInitialData();
     }
+
+    // PINPOINT: Add these three functions to your Store class in js/store.js
+
+    async addUserProfile(id, name, email, role) {
+        const { error } = await this.supabase.from('profiles').insert({ id, name, email, role });
+        if (error) {
+            console.error(error);
+            alert(`Error adding user profile: ${error.message}`);
+            return;
+        }
+        await this.loadInitialData();
+    }
+
+    async updateUserProfile(id, data) {
+        await this.supabase.from('profiles').update(camelToSnake(data)).eq('id', id);
+        await this.loadInitialData();
+    }
+
+    async deleteUserProfile(id) {
+        // This only deletes the profile, not the auth user. That must be done in the Supabase dashboard.
+        const { error } = await this.supabase.from('profiles').delete().eq('id', id);
+        if (error) {
+            console.error(error);
+            alert(`Error deleting user profile: ${error.message}`);
+            return;
+        }
+        await this.loadInitialData();
+    }
 }
 
 export const store = new Store();

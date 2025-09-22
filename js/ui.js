@@ -131,22 +131,36 @@ class UI {
         </div>`;
         document.getElementById('admin-user-list').innerHTML = content;
     }
+   // PINPOINT: Replace the entire createUserForm function in js/ui.js
+
     createUserForm(user = {}) {
+        const isEdit = !!user.id;
         const roles = ['admin', 'leader', 'member'];
         return `
         <form id="form" data-id="${user.id || ''}">
+            
+            ${!isEdit ? `
+            <div class="form-group">
+                <label for="id">User UID</label>
+                <input type="text" id="id" class="form-input" required placeholder="Paste UID from Supabase Auth here">
+            </div>` : ''}
+
             <div class="form-group">
                 <label for="name">Full Name</label>
                 <input type="text" id="name" class="form-input" value="${user.name || ''}" required>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" class="form-input" value="${user.email || ''}" required>
+                <input type="email" id="email" class="form-input" value="${user.email || ''}" required ${isEdit ? 'readonly' : ''}>
+                ${isEdit ? '<small>Email cannot be changed here. It must be changed in the Supabase Authentication dashboard.</small>' : ''}
             </div>
+            
+            ${!isEdit ? `
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" class="form-input" ${!user.id ? 'required' : ''} placeholder="${user.id ? 'Leave blank to keep same' : ''}">
-            </div>
+                <input type="password" id="password" class="form-input" disabled placeholder="Set the user's password in the Supabase Auth dashboard.">
+            </div>` : ''}
+
             <div class="form-group">
                 <label for="role">Role</label>
                 <select id="role" class="form-select">

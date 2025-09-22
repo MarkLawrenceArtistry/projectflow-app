@@ -177,7 +177,17 @@ class App {
                 return;
             }
             if (e.target.closest('#admin-view')) {
-                alert("User management should be done in the Supabase dashboard for security.");
+                const userRow = e.target.closest('tr[data-id]');
+                if (!userRow) return;
+
+                const userId = userRow.dataset.id;
+                if (e.target.closest('.edit-btn')) {
+                    this.handleUserForm(userId);
+                }
+                if (e.target.closest('.delete-btn')) {
+                    this.handleUserDelete(userId);
+                }
+                return;
             }
             if (e.target.closest('#team-view')) {
                 const memberCard = e.target.closest('.team-member-card');
@@ -272,6 +282,7 @@ class App {
         setupListener('add-status-item-btn', 'click', () => this.handleStatusForm());
         setupListener('add-risk-btn', 'click', () => this.handleRiskForm());
         setupListener('add-gantt-phase-btn', 'click', () => this.handleGanttPhaseForm());
+        setupListener('add-user-btn', 'click', () => this.handleUserForm());
         setupListener('add-project-admin-btn', 'click', () => this.handleProjectForm());
         setupListener('task-filter-sort', 'change', () => this.render());
         setupListener('task-filter-member', 'change', () => this.render());
@@ -340,6 +351,37 @@ class App {
         const project = store.projects.find(p => p.id === id);
         if (project && confirm(`Delete project "${project.name}"? This is irreversible.`)) {
             store.deleteProject(id);
+        }
+    }
+
+    
+    handleUserForm(id) {
+        const isEdit = !!id;
+        const user = isEdit ? store.users.find(u => u.id === id) : {};
+        ui.openModal(isEdit ? 'Edit User Profile' : 'Add New User Profile', ui.createUserForm(user));
+        document.getElementById('form').addEventListener('submit', e => {
+            e.preventDefault();
+            if (isEdit) {
+                const data = {
+                    name: document.getElementById('name').value,
+                    role: document.getElementById('role').value
+                };
+                store.updateUserProfile(id, data);
+            } else {
+                const userId = document.getElementById('id').value;
+                const name = document.getElementById('name').value;
+                const email = document.getElementById('email').value;
+                const role = document.getElementById('role').value;
+                store.addUserProfile(userId, name, email, role);
+            }
+            ui.closeModal();
+        });
+    }
+
+    handleUserDelete(id) {
+        const user = store.users.find(u => u.id === id);
+        if (user && confirm(`Are you sure you want to delete the profile for "${user.name}"?\n\nThis will ONLY delete their profile from this app. You must delete their login from the Supabase Authentication dashboard separately.`)) {
+            store.deleteUserProfile(id);
         }
     }
 
